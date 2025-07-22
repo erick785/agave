@@ -85,6 +85,14 @@ use {
     },
 };
 
+/// Get the node ID from command line argument or fallback to identity keypair pubkey
+fn get_node_id(matches: &ArgMatches, identity_keypair: &Keypair) -> String {
+    matches
+        .value_of("node_id")
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| identity_keypair.pubkey().to_string())
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Operation {
     Initialize,
@@ -123,6 +131,9 @@ pub fn execute(
         )
         .exit();
     });
+
+    let node_id = get_node_id(matches, &identity_keypair);
+    info!("Node ID: {}", node_id);
 
     let logfile = {
         let logfile = matches
@@ -1486,5 +1497,34 @@ fn process_account_indexes(matches: &ArgMatches) -> AccountSecondaryIndexes {
     AccountSecondaryIndexes {
         keys,
         indexes: account_indexes,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::{App, Arg};
+    use solana_keypair::Keypair;
+
+    #[test]
+    fn test_get_node_id_with_explicit_node_id() {
+        let app = App::new("test").arg(Arg::with_name("node_id").long("node-id").takes_value(true));
+
+        let matches = app.get_matches_from(vec!["test", "--node-id", "test-node-123"]);
+        let keypair = Keypair::new();
+
+        let node_id = get_node_id(&matches, &keypair);
+        assert_eq!(node_id, "test-node-123");
+    }
+
+    #[test]
+    fn test_get_node_id_fallback_to_pubkey() {
+        let app = App::new("test");
+        let matches = app.get_matches_from(vec!["test"]);
+        let keypair = Keypair::new();
+        let expected_pubkey = keypair.pubkey().to_string();
+
+        let node_id = get_node_id(&matches, &keypair);
+        assert_eq!(node_id, expected_pubkey);
     }
 }

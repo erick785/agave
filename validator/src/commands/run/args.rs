@@ -44,6 +44,13 @@ pub fn add_args<'a>(app: App<'a, 'a>, default_args: &'a DefaultArgs) -> App<'a, 
             .help("Validator identity keypair"),
     )
     .arg(
+        Arg::with_name("node_id")
+            .long("node-id")
+            .value_name("NODE_ID")
+            .takes_value(true)
+            .help("Specify the node ID for this validator"),
+    )
+    .arg(
         Arg::with_name("authorized_voter_keypairs")
             .long("authorized-voter")
             .value_name("KEYPAIR")
