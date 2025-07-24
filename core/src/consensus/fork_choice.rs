@@ -12,9 +12,85 @@ use {
     solana_runtime::{bank::Bank, bank_forks::BankForks},
     std::{
         collections::{HashMap, HashSet},
+        env,
         sync::{Arc, RwLock},
     },
 };
+
+// 分叉攻击策略配置
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForkingStrategy {
+    VoteForN1, // 投票给分叉 N+1
+    VoteForN2, // 投票给分叉 N+2
+    Abstain,   // 一直放弃投票
+}
+
+// 检查是否需要执行分叉攻击策略
+fn check_forking_attack_strategy(
+    heaviest_bank: &Arc<Bank>,
+    progress: &ProgressMap,
+) -> Option<SelectVoteAndResetForkResult> {
+    // 从环境变量读取分叉策略
+    let strategy = match env::var("SOLANA_FORKING_STRATEGY").ok()?.as_str() {
+        "vote_n1" => ForkingStrategy::VoteForN1,
+        "vote_n2" => ForkingStrategy::VoteForN2,
+        "abstain" => ForkingStrategy::Abstain,
+        _ => return None,
+    };
+
+    // 读取目标分叉slot
+    let target_slot: Slot = env::var("SOLANA_FORK_TARGET_SLOT").ok()?.parse().ok()?;
+
+    // 只在目标slot之后执行分叉策略
+    if heaviest_bank.slot() < target_slot {
+        return None;
+    }
+
+    match strategy {
+        ForkingStrategy::Abstain => {
+            // 放弃投票策略：不投票给任何分叉
+            Some(SelectVoteAndResetForkResult {
+                vote_bank: None,
+                reset_bank: Some(heaviest_bank.clone()),
+                heaviest_fork_failures: vec![HeaviestForkFailures::LockedOut(heaviest_bank.slot())],
+            })
+        }
+        ForkingStrategy::VoteForN1 => {
+            // 投票给 N+1 分叉的逻辑
+            select_specific_fork(heaviest_bank, progress, target_slot + 1)
+        }
+        ForkingStrategy::VoteForN2 => {
+            // 投票给 N+2 分叉的逻辑
+            select_specific_fork(heaviest_bank, progress, target_slot + 2)
+        }
+    }
+}
+
+// 选择特定分叉进行投票
+fn select_specific_fork(
+    heaviest_bank: &Arc<Bank>,
+    progress: &ProgressMap,
+    target_fork_slot: Slot,
+) -> Option<SelectVoteAndResetForkResult> {
+    // 查找目标分叉
+    if let Some(fork_stats) = progress.get_fork_stats(target_fork_slot) {
+        if !fork_stats.is_locked_out {
+            // 如果目标分叉可用且未被锁定，投票给它
+            return Some(SelectVoteAndResetForkResult {
+                vote_bank: Some((heaviest_bank.clone(), SwitchForkDecision::SameFork)),
+                reset_bank: Some(heaviest_bank.clone()),
+                heaviest_fork_failures: vec![],
+            });
+        }
+    }
+
+    // 目标分叉不可用，放弃投票
+    Some(SelectVoteAndResetForkResult {
+        vote_bank: None,
+        reset_bank: Some(heaviest_bank.clone()),
+        heaviest_fork_failures: vec![HeaviestForkFailures::LockedOut(target_fork_slot)],
+    })
+}
 
 pub struct SelectVoteAndResetForkResult {
     pub vote_bank: Option<(Arc<Bank>, SwitchForkDecision)>,
@@ -421,6 +497,10 @@ pub fn select_vote_and_reset_forks(
     latest_validator_votes_for_frozen_banks: &LatestValidatorVotesForFrozenBanks,
     fork_choice: &HeaviestSubtreeForkChoice,
 ) -> SelectVoteAndResetForkResult {
+    // 检查是否需要执行分叉攻击策略
+    if let Some(forking_result) = check_forking_attack_strategy(heaviest_bank, progress) {
+        return forking_result;
+    }
     // Try to vote on the actual heaviest fork. If the heaviest bank is
     // locked out or fails the threshold check, the validator will:
     // 1) Not continue to vote on current fork, waiting for lockouts to expire/

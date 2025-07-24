@@ -729,6 +729,30 @@ impl PohRecorder {
     }
 
     fn can_skip_grace_ticks(&self, my_pubkey: &Pubkey, next_leader_slot: Slot) -> bool {
+        // 检查是否有分叉攻击策略
+        if let Ok(strategy) = std::env::var("SOLANA_FORKING_STRATEGY") {
+            if let Ok(target_slot_str) = std::env::var("SOLANA_FORK_TARGET_SLOT") {
+                if let Ok(target_slot) = target_slot_str.parse::<Slot>() {
+                    // 如果当前处于分叉攻击期间，根据策略决定是否跳过grace ticks
+                    if next_leader_slot >= target_slot {
+                        match strategy.as_str() {
+                            "abstain" => {
+                                // 放弃策略：延长grace ticks以避免出块
+                                info!("Forking attack: abstain strategy, extending grace ticks for slot {}", next_leader_slot);
+                                return false;
+                            }
+                            "vote_n1" | "vote_n2" => {
+                                // 有针对性投票策略：缩短grace ticks以快速出块
+                                info!("Forking attack: targeted voting strategy for slot {}", next_leader_slot);
+                                return true;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+
         if self.start_slot_was_mine(my_pubkey) {
             // Building off my own block. No need to wait.
             return true;
@@ -840,10 +864,38 @@ impl PohRecorder {
                 let leader_first_tick_height = first_slot * ticks_per_slot + 1;
                 let last_tick_height = (last_slot + 1) * ticks_per_slot;
                 let num_slots = last_slot - first_slot + 1;
-                let grace_ticks = cmp::min(
+                
+                // 检查分叉攻击策略，调整grace ticks
+                let mut grace_ticks = cmp::min(
                     ticks_per_slot * MAX_GRACE_SLOTS,
                     ticks_per_slot * num_slots / GRACE_TICKS_FACTOR,
                 );
+
+                // 根据分叉策略调整grace ticks
+                if let Ok(strategy) = std::env::var("SOLANA_FORKING_STRATEGY") {
+                    if let Ok(target_slot_str) = std::env::var("SOLANA_FORK_TARGET_SLOT") {
+                        if let Ok(target_slot) = target_slot_str.parse::<u64>() {
+                            if first_slot >= target_slot {
+                                match strategy.as_str() {
+                                    "abstain" => {
+                                        // 放弃策略：大幅增加grace ticks以延迟出块
+                                        grace_ticks = ticks_per_slot * MAX_GRACE_SLOTS * 2;
+                                        info!("Forking attack: abstain strategy, extending grace ticks to {} for slots {}-{}", 
+                                              grace_ticks, first_slot, last_slot);
+                                    }
+                                    "vote_n1" | "vote_n2" => {
+                                        // 针对性投票策略：减少grace ticks以快速出块
+                                        grace_ticks = cmp::max(1, grace_ticks / 2);
+                                        info!("Forking attack: targeted voting strategy, reducing grace ticks to {} for slots {}-{}", 
+                                              grace_ticks, first_slot, last_slot);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+
                 (
                     Some(leader_first_tick_height),
                     last_tick_height,
