@@ -37,7 +37,8 @@ use {
 // epoch has been fully (de)activated. this means, as long as one epoch has
 // passed since activation where all prior stake had escaped warmup/cooldown,
 // we can pretend the rate has always beein 9% without issue. so we do that
-const PERPETUAL_NEW_WARMUP_COOLDOWN_RATE_EPOCH: Option<u64> = Some(0);
+// Modified to None to use faster 25% rate instead of 9%
+const PERPETUAL_NEW_WARMUP_COOLDOWN_RATE_EPOCH: Option<u64> = None;
 
 // utility function, used by Stakes, tests
 pub fn from<T: ReadableAccount + StateMut<StakeStateV2>>(account: &T) -> Option<StakeStateV2> {
