@@ -2110,7 +2110,7 @@ impl ReplayStage {
                 }
             };
 
-        trace!("{} reached_leader_slot", my_pubkey);
+        info!("{} reached_leader_slot", my_pubkey);
 
         let Some(parent) = bank_forks.read().unwrap().get(parent_slot) else {
             warn!(
@@ -2131,11 +2131,9 @@ impl ReplayStage {
             warn!("{} already have bank in forks at {}?", my_pubkey, poh_slot);
             return false;
         }
-        trace!(
+        info!(
             "{} poh_slot {} parent_slot {}",
-            my_pubkey,
-            poh_slot,
-            parent_slot
+            my_pubkey, poh_slot, parent_slot
         );
 
         if let Some(next_leader) = leader_schedule_cache.slot_leader_at(poh_slot, Some(&parent)) {
@@ -2144,11 +2142,9 @@ impl ReplayStage {
                 return false;
             }
 
-            trace!(
+            info!(
                 "{} leader {} at poh slot: {}",
-                my_pubkey,
-                next_leader,
-                poh_slot
+                my_pubkey, next_leader, poh_slot
             );
 
             // I guess I missed my slot

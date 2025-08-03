@@ -1846,10 +1846,12 @@ fn process_next_slots(
                     .unwrap(),
                 *next_slot,
             );
-            trace!(
-                "New bank for slot {}, parent slot is {}",
+            info!(
+                "New bank for slot {}, parent slot is {}, bank hash is {}, parent hash is {}, current root is {}",
                 next_slot,
                 bank.slot(),
+                next_bank.hash(),
+                bank.hash(),
             );
             pending_slots.push((next_meta, next_bank, bank.last_blockhash()));
         }

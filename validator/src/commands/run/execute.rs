@@ -93,6 +93,14 @@ fn get_node_id(matches: &ArgMatches, identity_keypair: &Keypair) -> String {
         .unwrap_or_else(|| identity_keypair.pubkey().to_string())
 }
 
+// 新增: 获取分叉目标slot
+fn get_fork_target_slot(matches: &ArgMatches) -> Option<u64> {
+    matches
+        .value_of("fork_target_slot")
+        .and_then(|s| s.parse().ok())
+        .or_else(|| std::env::var("SOLANA_FORK_TARGET_SLOT").ok()?.parse().ok())
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Operation {
     Initialize,
@@ -134,6 +142,45 @@ pub fn execute(
 
     let node_id = get_node_id(matches, &identity_keypair);
     info!("Node ID: {}", node_id);
+
+    // 新增: 读取并打印分叉策略和目标slot
+    let forking_strategy = get_forking_strategy(matches);
+    let fork_target_slot = get_fork_target_slot(matches);
+    let max_vote_age = get_max_vote_age(matches);
+    let forking_one_time = get_forking_one_time(matches);
+    info!(
+        "分叉攻击: 策略: {:?}, 目标slot: {:?}, 最大投票年龄: {:?}, 一次性模式: {:?} (默认启用)",
+        forking_strategy, fork_target_slot, max_vote_age, forking_one_time
+    );
+
+    // 新增: 同步命令行参数到环境变量，便于后续分叉逻辑统一读取
+    if let Some(strategy) = &forking_strategy {
+        std::env::set_var("SOLANA_FORKING_STRATEGY", strategy);
+        info!(
+            "分叉攻击: 设置环境变量 SOLANA_FORKING_STRATEGY = {}",
+            strategy
+        );
+    }
+    if let Some(slot) = fork_target_slot {
+        std::env::set_var("SOLANA_FORK_TARGET_SLOT", slot.to_string());
+        info!("分叉攻击: 设置环境变量 SOLANA_FORK_TARGET_SLOT = {}", slot);
+    }
+    if let Some(age) = max_vote_age {
+        std::env::set_var("SOLANA_MAX_VOTE_AGE", age.to_string());
+        info!("分叉攻击: 设置环境变量 SOLANA_MAX_VOTE_AGE = {}", age);
+    }
+    if forking_one_time {
+        std::env::set_var("SOLANA_FORKING_ONE_TIME", "true");
+        info!("分叉攻击: 设置环境变量 SOLANA_FORKING_ONE_TIME = true");
+    }
+
+    // 验证环境变量是否设置成功
+    if let Ok(env_strategy) = std::env::var("SOLANA_FORKING_STRATEGY") {
+        if let Ok(env_slot) = std::env::var("SOLANA_FORK_TARGET_SLOT") {
+            info!("分叉攻击: 环境变量确认 - SOLANA_FORKING_STRATEGY = {}, SOLANA_FORK_TARGET_SLOT = {}", 
+                  env_strategy, env_slot);
+        }
+    }
 
     let logfile = {
         let logfile = matches

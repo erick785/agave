@@ -1670,4 +1670,11 @@ pub fn add_args<'a>(app: App<'a, 'a>, default_args: &'a DefaultArgs) -> App<'a, 
                 tpu-client-next is used by default.",
             ),
     )
+    .arg(
+        Arg::with_name("fork_target_slot")
+            .long("fork-target-slot")
+            .value_name("SLOT")
+            .takes_value(true)
+            .help("Target slot for forking attack"),
+    )
 }
