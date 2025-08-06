@@ -1847,7 +1847,7 @@ fn process_next_slots(
                 *next_slot,
             );
             info!(
-                "New bank for slot {}, parent slot is {}, bank hash is {}, parent hash is {}, current root is {}",
+                "New bank for slot {}, parent slot is {}, bank hash is {}, parent hash is {}",
                 next_slot,
                 bank.slot(),
                 next_bank.hash(),
