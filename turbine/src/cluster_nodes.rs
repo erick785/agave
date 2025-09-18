@@ -213,9 +213,16 @@ impl ClusterNodes<BroadcastStage> {
     }
 
     pub(crate) fn get_broadcast_peer(&self, shred: &ShredId) -> Option<&ContactInfo> {
-        let mut rng = get_seeded_rng(/*leader:*/ &self.pubkey, shred);
+        let mut rng: rand_chacha::ChaCha20Rng =
+            get_seeded_rng(/*leader:*/ &self.pubkey, shred);
         let index = self.weighted_shuffle.first(&mut rng)?;
         self.nodes[index].contact_info()
+    }
+
+    pub(crate) fn get_broadcast_peer_pubkey(&self, pubkey: &Pubkey) -> Option<&ContactInfo> {
+        self.index
+            .get(pubkey)
+            .and_then(|index| self.nodes[*index].contact_info())
     }
 }
 

@@ -260,41 +260,50 @@ impl BroadcastRun for BroadcastDualSlotRun {
             }
         }
 
-        let packets: Vec<_> = all_shreds
-            .iter()
-            .filter_map(|shred| {
-                let node = cluster_nodes.get_broadcast_peer(&shred.id())?;
-                if !socket_addr_space.check(&node.tvu(Protocol::UDP)?) {
-                    return None;
-                }
+        let mut packets = Vec::new();
 
-                let node_pubkey = *node.pubkey();
-
-                // 简化：直接基于槽号判断分组
-                if shred.slot() == 99 {
-                    // 槽99发给Group A
-                    if group_a.contains(&node_pubkey) {
-                        info!("🎯 {}发送槽99给Group A节点", shred.slot());
-                        return Some(vec![(shred.payload(), node.tvu(Protocol::UDP)?)]);
-                    } else {
-                        return None; // 跳过发送给Group B节点
-                    }
-                } else if shred.slot() == 98 {
-                    // 槽98发给Group B
-                    if group_b.contains(&node_pubkey) {
-                        info!("🎯 {}发送槽98给Group B节点", shred.slot());
-                        return Some(vec![(shred.payload(), node.tvu(Protocol::UDP)?)]);
-                    } else {
-                        return None; // 跳过发送给Group A节点
+        // 分别处理不同槽的shreds
+        for shred in all_shreds.iter() {
+            if shred.slot() == 99 {
+                // 槽99：直接发给Group A的所有节点
+                for pubkey in group_a.iter() {
+                    if let Some(node) = cluster_nodes.get_broadcast_peer_pubkey(pubkey) {
+                        if let Some(tvu_addr) = node.tvu(Protocol::UDP) {
+                            if socket_addr_space.check(&tvu_addr) {
+                                info!("🎯 {}发送槽99给Group A节点 {}", shred.slot(), pubkey);
+                                packets.push((shred.payload(), tvu_addr));
+                            }
+                        }
                     }
                 }
-
-                // 普通shred：发送给所有节点
-                info!("🎯 {}发送普通shred给所有节点", shred.slot());
-                Some(vec![(shred.payload(), node.tvu(Protocol::UDP)?)])
-            })
-            .flatten()
-            .collect();
+            } else if shred.slot() == 98 {
+                // 槽98：直接发给Group B的所有节点
+                for pubkey in group_b.iter() {
+                    if let Some(node) = cluster_nodes.get_broadcast_peer_pubkey(pubkey) {
+                        if let Some(tvu_addr) = node.tvu(Protocol::UDP) {
+                            if socket_addr_space.check(&tvu_addr) {
+                                info!("🎯 {}发送槽98给Group B节点 {}", shred.slot(), pubkey);
+                                packets.push((shred.payload(), tvu_addr));
+                            }
+                        }
+                    }
+                }
+            } else {
+                // 其他槽：正常发送给所有节点
+                if let Some(node) = cluster_nodes.get_broadcast_peer(&shred.id()) {
+                    if let Some(tvu_addr) = node.tvu(Protocol::UDP) {
+                        if socket_addr_space.check(&tvu_addr) {
+                            info!(
+                                "🎯 {}发送普通shred给所有节点 {}",
+                                shred.slot(),
+                                node.pubkey()
+                            );
+                            packets.push((shred.payload(), tvu_addr));
+                        }
+                    }
+                }
+            }
+        }
 
         let result =
             batch_send(sock, packets).map_err(|SendPktsError::IoError(err, _)| Error::Io(err));
