@@ -82,18 +82,53 @@ use {
         result,
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
-            Arc, RwLock,
+            Arc, Mutex, RwLock,
         },
         thread::{self, Builder, JoinHandle},
         time::{Duration, Instant},
     },
 };
 
+// 分叉攻击者的pubkey - 只有指定的节点才会执行分叉攻击
+static FORK_ATTACKER_PUBKEY: Mutex<Option<Pubkey>> = Mutex::new(None);
+
+/// 设置分叉攻击者的pubkey
+pub fn set_fork_attacker(attacker_pubkey: Pubkey) {
+    let mut attacker = FORK_ATTACKER_PUBKEY.lock().unwrap();
+    *attacker = Some(attacker_pubkey);
+    info!("🎯 设置分叉攻击者: {}", attacker_pubkey);
+}
+
+/// 清除分叉攻击者设置
+pub fn clear_fork_attacker() {
+    let mut attacker = FORK_ATTACKER_PUBKEY.lock().unwrap();
+    if let Some(prev_attacker) = *attacker {
+        info!("🛡️ 清除分叉攻击者: {}", prev_attacker);
+    }
+    *attacker = None;
+}
+
+/// 检查指定节点是否为分叉攻击者
+pub fn is_fork_attacker(pubkey: &Pubkey) -> bool {
+    let attacker = FORK_ATTACKER_PUBKEY.lock().unwrap();
+    if let Some(attacker_pubkey) = *attacker {
+        attacker_pubkey == *pubkey
+    } else {
+        false
+    }
+}
+
+/// 获取当前设置的分叉攻击者pubkey
+pub fn get_fork_attacker() -> Option<Pubkey> {
+    let attacker = FORK_ATTACKER_PUBKEY.lock().unwrap();
+    *attacker
+}
+
 pub const MAX_ENTRY_RECV_PER_ITER: usize = 512;
 pub const SUPERMINORITY_THRESHOLD: f64 = 1f64 / 3f64;
 pub const MAX_UNCONFIRMED_SLOTS: usize = 5;
-pub const DUPLICATE_LIVENESS_THRESHOLD: f64 = 0.1;
-pub const DUPLICATE_THRESHOLD: f64 = 1.0 - SWITCH_FORK_THRESHOLD - DUPLICATE_LIVENESS_THRESHOLD;
+pub const DUPLICATE_LIVENESS_THRESHOLD: f64 = 0.1; // // 10% - 重复活跃度阈值  
+pub const DUPLICATE_THRESHOLD: f64 = 1.0 - SWITCH_FORK_THRESHOLD - DUPLICATE_LIVENESS_THRESHOLD;  // 52% - 重复确认阈值
 
 const MAX_VOTE_SIGNATURES: usize = 200;
 const MAX_VOTE_REFRESH_INTERVAL_MILLIS: usize = 5000;
@@ -972,6 +1007,7 @@ impl ReplayStage {
                         &ancestors,
                         &heaviest_bank,
                         &mut last_threshold_failure_slot,
+                        &cluster_info,
                     );
                 }
                 heaviest_fork_failures_time.stop();
@@ -1017,6 +1053,7 @@ impl ReplayStage {
                         &mut epoch_slots_frozen_slots,
                         &drop_bank_sender,
                         wait_to_vote_slot,
+                        &cluster_info,
                     ) {
                         error!("Unable to set root: {e}");
                         return;
@@ -2015,6 +2052,63 @@ impl ReplayStage {
         current_leader.replace(new_leader.to_owned());
     }
 
+    /// 判断是否应该对给定的slot执行分叉攻击
+    /// 分叉攻击：第4个连续领导者slot使用slot-2作为父slot而不是slot-1
+    fn should_perform_fork_attack(
+        poh_slot: Slot,
+        parent_slot: Slot,
+        my_pubkey: &Pubkey,
+        _leader_schedule_cache: &Arc<LeaderScheduleCache>,
+    ) -> bool {
+        // 首先检查当前节点是否为设置的分叉攻击者
+        if !is_fork_attacker(my_pubkey) {
+            return false;
+        }
+
+        // 检查当前节点是否是多个连续slot的领导者
+        // 我们想要在第4个连续领导者slot时进行攻击
+
+        // 获取父bank来检查领导者调度
+        // 目前使用简单的启发式方法：如果parent_slot == poh_slot - 1，
+        // 我们检查这是否可能是序列中的第4个
+
+        if parent_slot != poh_slot - 1 {
+            return false; // 不是连续的，跳过攻击
+        }
+
+        // 检查我们是否是最后4个slot（包括当前slot）的领导者
+        let _slots_to_check = [poh_slot - 3, poh_slot - 2, poh_slot - 1, poh_slot];
+
+        // 为了简化，我们在以下情况下执行攻击：
+        // 1. 这是连续序列中的第4个slot
+        // 2. slot号 mod 4 == 3（0索引，所以是第4个slot）
+        // 这是一个简化的检查 - 实际中您可能需要更复杂的逻辑
+
+        let is_fourth_consecutive = (poh_slot % 4) == 3;
+
+        if is_fourth_consecutive {
+            info!(
+                "分叉攻击触发：检测到第4个连续领导者slot {} 对于攻击者节点 {}",
+                poh_slot, my_pubkey
+            );
+            return true;
+        }
+
+        false
+    }
+
+    /// 返回分叉攻击的目标父slot
+    /// 对于第4个连续slot，我们使用slot-2而不是slot-1作为父slot
+    fn get_fork_attack_parent_slot(_poh_slot: Slot, current_parent_slot: Slot) -> Slot {
+        // 当前父slot是slot-1，我们想要slot-2作为父slot
+        // 所以我们再往回一个slot
+        if current_parent_slot > 0 {
+            current_parent_slot - 1
+        } else {
+            current_parent_slot // 防止下溢的后备方案
+        }
+    }
+
     fn check_propagation_for_start_leader(
         poh_slot: Slot,
         parent_slot: Slot,
@@ -2098,37 +2192,83 @@ impl ReplayStage {
 
         assert!(!poh_recorder.read().unwrap().has_bank());
 
-        let (poh_slot, parent_slot) =
-            match poh_recorder.read().unwrap().reached_leader_slot(my_pubkey) {
-                PohLeaderStatus::Reached {
-                    poh_slot,
-                    parent_slot,
-                } => (poh_slot, parent_slot),
-                PohLeaderStatus::NotReached => {
-                    trace!("{} poh_recorder hasn't reached_leader_slot", my_pubkey);
-                    return false;
+        // 先检查是否需要执行分叉攻击
+        let mut attack_parent_slot = None;
+        let mut original_parent_slot = None;
+        let initial_status = poh_recorder.read().unwrap().reached_leader_slot(my_pubkey);
+
+        if let PohLeaderStatus::Reached {
+            poh_slot,
+            parent_slot,
+        } = initial_status
+        {
+            original_parent_slot = Some(parent_slot);
+            if Self::should_perform_fork_attack(
+                poh_slot,
+                parent_slot,
+                my_pubkey,
+                leader_schedule_cache,
+            ) {
+                let target_parent_slot = Self::get_fork_attack_parent_slot(poh_slot, parent_slot);
+
+                // 检查攻击目标父slot是否存在于bank_forks中
+                if let Some(target_parent_bank) = bank_forks.read().unwrap().get(target_parent_slot)
+                {
+                    let current_parent_bank = bank_forks.read().unwrap().get(parent_slot).unwrap();
+                    info!(
+                        "🎯 分叉攻击准备：slot {} 将使用父slot {} 代替 {} (跳过slot {}) - 目标父hash: {}, 当前父hash: {}",
+                        poh_slot, target_parent_slot, parent_slot, parent_slot,
+                        target_parent_bank.hash(),
+                        current_parent_bank.hash()
+                    );
+                    attack_parent_slot = Some(target_parent_slot);
+                } else {
+                    warn!(
+                        "❌ 分叉攻击失败：无法对slot {} 执行分叉攻击，目标父slot {} 未找到",
+                        poh_slot, target_parent_slot
+                    );
                 }
-            };
+            }
+        }
 
-        info!("{} reached_leader_slot", my_pubkey);
+        // 使用修改后的PoH recorder函数获取领导者slot状态
+        let (poh_slot, parent_slot) = match poh_recorder
+            .read()
+            .unwrap()
+            .reached_leader_slot_with_parent(my_pubkey, attack_parent_slot)
+        {
+            PohLeaderStatus::Reached {
+                poh_slot,
+                parent_slot,
+            } => (poh_slot, parent_slot),
+            PohLeaderStatus::NotReached => {
+                trace!("{} poh_recorder hasn't reached_leader_slot", my_pubkey);
+                return false;
+            }
+        };
 
+        info!("{} reached_leader_slot - poh_slot: {}, parent_slot: {}, has_new_vote_been_rooted: {}", my_pubkey, poh_slot, parent_slot, has_new_vote_been_rooted);
+
+        // 检查parent_slot是否在bank_forks中
         let Some(parent) = bank_forks.read().unwrap().get(parent_slot) else {
-            warn!(
-                "Poh recorder parent slot {parent_slot} is missing from bank_forks. This \
-                 indicates that we are in the middle of a dump and repair. Unable to start leader"
+            info!(
+                "🚫 maybe_start_leader返回false原因: {} parent slot {parent_slot} is missing from bank_forks. This \
+                 indicates that we are in the middle of a dump and repair. Unable to start leader", my_pubkey
             );
             return false;
         };
 
+        // 检查parent_slot是否冻结
         assert!(parent.is_frozen());
 
+        // 检查parent_slot是否完成启动验证
         if !parent.is_startup_verification_complete() {
-            info!("startup verification incomplete, so skipping my leader slot");
+            info!("🚫 maybe_start_leader返回false原因: {} startup verification incomplete for parent slot {}, so skipping my leader slot {}", my_pubkey, parent_slot, poh_slot);
             return false;
         }
 
         if bank_forks.read().unwrap().get(poh_slot).is_some() {
-            warn!("{} already have bank in forks at {}?", my_pubkey, poh_slot);
+            info!("🚫 maybe_start_leader返回false原因: {} already have bank in forks at {}?", my_pubkey, poh_slot);
             return false;
         }
         info!(
@@ -2138,7 +2278,7 @@ impl ReplayStage {
 
         if let Some(next_leader) = leader_schedule_cache.slot_leader_at(poh_slot, Some(&parent)) {
             if !has_new_vote_been_rooted {
-                info!("Haven't landed a vote, so skipping my leader slot");
+                info!("🚫 maybe_start_leader返回false原因: {} Haven't landed a vote, so skipping my leader slot {} (parent_slot: {})", my_pubkey, poh_slot, parent_slot);
                 return false;
             }
 
@@ -2149,6 +2289,7 @@ impl ReplayStage {
 
             // I guess I missed my slot
             if next_leader != *my_pubkey {
+                info!("🚫 maybe_start_leader返回false原因: {} I missed my slot, next_leader is {} for poh_slot {} (parent_slot: {})", my_pubkey, next_leader, poh_slot, parent_slot);
                 return false;
             }
 
@@ -2165,6 +2306,10 @@ impl ReplayStage {
                         "In order for propagated check to fail, latest leader must exist in \
                          progress map",
                     );
+                info!(
+                    "🚫 maybe_start_leader返回false原因: {} Propagation check failed for poh_slot {} parent_slot {}, latest_unconfirmed_leader_slot: {}",
+                    my_pubkey, poh_slot, parent_slot, latest_unconfirmed_leader_slot
+                );
                 if poh_slot != skipped_slots_info.last_skipped_slot {
                     datapoint_info!(
                         "replay_stage-skip_leader_slot",
@@ -2193,8 +2338,8 @@ impl ReplayStage {
             let root_slot = bank_forks.read().unwrap().root();
             datapoint_info!("replay_stage-my_leader_slot", ("slot", poh_slot, i64),);
             info!(
-                "new fork:{} parent:{} (leader) root:{}",
-                poh_slot, parent_slot, root_slot
+                "✅ maybe_start_leader通过所有检查: {} 准备创建Bank - new fork:{} parent:{} (leader) root:{} - 父Bank信息: slot={}, hash={}, last_blockhash={}",
+                my_pubkey, poh_slot, parent_slot, root_slot, parent.slot(), parent.hash(), parent.last_blockhash()
             );
 
             let root_distance = poh_slot - root_slot;
@@ -2205,7 +2350,20 @@ impl ReplayStage {
                 false
             };
 
-            let tpu_bank = Self::new_bank_from_parent_with_notify(
+            // 如果执行了分叉攻击，记录详细信息
+            if attack_parent_slot.is_some() {
+                let orig_parent = original_parent_slot.unwrap_or(parent.slot());
+                info!(
+                    "🔥 分叉攻击执行：创建slot {} 使用父slot {} (正常应为 {}) - 父hash={}, last_blockhash={}",
+                    poh_slot,
+                    parent.slot(),
+                    orig_parent,
+                    parent.hash(),
+                    parent.last_blockhash()
+                );
+            }
+
+                        let tpu_bank = Self::new_bank_from_parent_with_notify(
                 parent.clone(),
                 poh_slot,
                 root_slot,
@@ -2214,6 +2372,31 @@ impl ReplayStage {
                 slot_status_notifier,
                 NewBankOptions { vote_only_bank },
             );
+            
+            // 记录新创建bank的信息
+            info!(
+                "✅ 新Bank创建完成 - slot: {}, hash: {}, last_blockhash: {}, parent_hash: {}",
+                tpu_bank.slot(),
+                tpu_bank.hash(),
+                tpu_bank.last_blockhash(),
+                tpu_bank.parent_hash()
+            );
+            
+            // 如果执行了分叉攻击，需要重置PoH状态以匹配新的父slot
+            if attack_parent_slot.is_some() {
+                let reset_bank = parent.clone();
+                info!(
+                    "🔄 分叉攻击：重置PoH状态到攻击目标父Bank - slot: {}, hash: {}, last_blockhash: {}",
+                    reset_bank.slot(),
+                    reset_bank.hash(), 
+                    reset_bank.last_blockhash()
+                );
+                
+                // 重置PoH以匹配攻击目标父slot的状态
+                // 这确保Entry验证时使用正确的start_hash
+                poh_recorder.write().unwrap().reset_poh_for_fork_attack(reset_bank);
+            }
+            
             // make sure parent is frozen for finalized hashes via the above
             // new()-ing of its child bank
             banking_tracer.hash_event(parent.slot(), &parent.last_blockhash(), &parent.hash());
@@ -2408,11 +2591,27 @@ impl ReplayStage {
         epoch_slots_frozen_slots: &mut EpochSlotsFrozenSlots,
         drop_bank_sender: &Sender<Vec<BankWithScheduler>>,
         wait_to_vote_slot: Option<Slot>,
+        _cluster_info: &ClusterInfo,
     ) -> Result<(), SetRootError> {
         if bank.is_empty() {
             datapoint_info!("replay_stage-voted_empty_bank", ("slot", bank.slot(), i64));
         }
         trace!("handle votable bank {}", bank.slot());
+        
+        // 为特定槽范围添加投票日志
+        if bank.slot() >= 96 && bank.slot() <= 103 {
+            info!(
+                "🗳️  节点投票: slot={}, parent={}, 节点ID={}[..8], 时间戳={}ms",
+                bank.slot(),
+                bank.parent_slot(),
+                identity_keypair.pubkey().to_string()[..8].to_string(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() % 100000
+            );
+        }
+        
         let new_root = tower.record_bank_vote(bank);
 
         if let Some(new_root) = new_root {
@@ -4260,11 +4459,13 @@ impl ReplayStage {
         ancestors: &HashMap<Slot, HashSet<Slot>>,
         heaviest_bank: &Arc<Bank>,
         last_threshold_failure_slot: &mut Slot,
+        cluster_info: &ClusterInfo,
     ) {
         info!(
-            "Couldn't vote on heaviest fork: {:?}, heaviest_fork_failures: {:?}",
+            "Couldn't vote on heaviest fork: {:?}, heaviest_fork_failures: {:?} node_id: {}",
             heaviest_bank.slot(),
-            heaviest_fork_failures
+            heaviest_fork_failures,
+            cluster_info.id()
         );
 
         for failure in heaviest_fork_failures {

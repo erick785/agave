@@ -29,7 +29,19 @@ pub enum ForkingStrategy {
 fn check_forking_attack_strategy(
     heaviest_bank: &Arc<Bank>,
     progress: &ProgressMap,
+    tower: &Tower,
 ) -> Option<SelectVoteAndResetForkResult> {
+    // 首先检查当前节点是否为设置的分叉攻击者
+    use crate::replay_stage::get_fork_attacker;
+
+    let attacker_pubkey = get_fork_attacker()?;
+
+    // 通过 tower 获取当前节点的 pubkey
+    let tower_node_pubkey = tower.node_pubkey;
+    if tower_node_pubkey != attacker_pubkey {
+        return None; // 不是攻击者节点，使用正常投票逻辑
+    }
+
     // 从环境变量读取分叉策略
     let strategy = match env::var("SOLANA_FORKING_STRATEGY").ok()?.as_str() {
         "vote_n1" => ForkingStrategy::VoteForN1,
@@ -49,6 +61,12 @@ fn check_forking_attack_strategy(
     match strategy {
         ForkingStrategy::Abstain => {
             // 放弃投票策略：不投票给任何分叉
+            info!(
+                "🚫 分叉攻击者 {} 停止投票：slot {} 超过目标 slot {}",
+                tower_node_pubkey,
+                heaviest_bank.slot(),
+                target_slot
+            );
             Some(SelectVoteAndResetForkResult {
                 vote_bank: None,
                 reset_bank: Some(heaviest_bank.clone()),
@@ -498,7 +516,7 @@ pub fn select_vote_and_reset_forks(
     fork_choice: &HeaviestSubtreeForkChoice,
 ) -> SelectVoteAndResetForkResult {
     // 检查是否需要执行分叉攻击策略
-    if let Some(forking_result) = check_forking_attack_strategy(heaviest_bank, progress) {
+    if let Some(forking_result) = check_forking_attack_strategy(heaviest_bank, progress, tower) {
         return forking_result;
     }
     // Try to vote on the actual heaviest fork. If the heaviest bank is

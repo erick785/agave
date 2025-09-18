@@ -1654,7 +1654,10 @@ fn confirm_slot_entries(
             recyclers.clone(),
         );
         if entry_state.status() == EntryVerificationStatus::Failure {
-            warn!("Ledger proof of history failed at slot: {}", slot);
+            warn!(
+                "Ledger proof of history failed at slot: {},skip_verification: {},last_entry: {}",
+                slot, skip_verification, progress.last_entry
+            );
             return Err(BlockError::InvalidEntryHash.into());
         }
         Some(entry_state)

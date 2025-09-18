@@ -520,6 +520,44 @@ impl PohRecorder {
         self.start_tick_height = self.tick_height + 1;
     }
 
+    /// 专门用于分叉攻击的PoH重置方法
+    /// 重置PoH状态以匹配攻击目标父Bank，确保Entry哈希链的一致性
+    pub fn reset_poh_for_fork_attack(&mut self, attack_parent_bank: Arc<Bank>) {
+        let blockhash = attack_parent_bank.last_blockhash();
+        let old_poh_hash = {
+            let mut poh = self.poh.lock().unwrap();
+            let old_hash = poh.hash;
+            poh.reset(blockhash, *attack_parent_bank.hashes_per_tick());
+            old_hash
+        };
+        
+        info!(
+            "🔄 分叉攻击PoH重置：从 {} 重置到攻击目标父Bank {} (slot: {}, blockhash: {})",
+            old_poh_hash,
+            attack_parent_bank.hash(),
+            attack_parent_bank.slot(),
+            blockhash
+        );
+
+        // 清空tick缓存，因为之前的ticks可能基于错误的PoH状态
+        self.tick_cache = vec![];
+        
+        // 更新start_bank为攻击目标父Bank
+        self.start_bank = attack_parent_bank.clone();
+        self.start_bank_active_descendants = vec![];
+        
+        // 重新计算tick_height以匹配新的start_bank
+        self.tick_height = (self.start_slot() + 1) * self.ticks_per_slot;
+        self.start_tick_height = self.tick_height + 1;
+        
+        info!(
+            "🎯 分叉攻击PoH重置完成：新的start_slot={}, tick_height={}, start_tick_height={}",
+            self.start_slot(),
+            self.tick_height,
+            self.start_tick_height
+        );
+    }
+
     // Flush cache will delay flushing the cache for a bank until it past the WorkingBank::min_tick_height
     // On a record flush will flush the cache at the WorkingBank::min_tick_height, since a record
     // occurs after the min_tick_height was generated
@@ -666,13 +704,24 @@ impl PohRecorder {
     /// slot and the parent slot (could be a few slots ago if any previous
     /// leaders needed to be skipped).
     pub fn reached_leader_slot(&self, my_pubkey: &Pubkey) -> PohLeaderStatus {
+        self.reached_leader_slot_with_parent(my_pubkey, None)
+    }
+
+    /// 返回是否已到达领导者slot，可以手动指定父slot用于分叉攻击
+    /// 如果指定了override_parent_slot，将使用该slot作为父slot而不是默认的start_slot
+    pub fn reached_leader_slot_with_parent(
+        &self,
+        my_pubkey: &Pubkey,
+        override_parent_slot: Option<Slot>,
+    ) -> PohLeaderStatus {
         trace!(
-            "tick_height {}, start_tick_height {}, leader_first_tick_height {:?}, grace_ticks {}, has_bank {}",
+            "tick_height {}, start_tick_height {}, leader_first_tick_height {:?}, grace_ticks {}, has_bank {}, override_parent {:?}",
             self.tick_height,
             self.start_tick_height,
             self.leader_first_tick_height,
             self.grace_ticks,
-            self.has_bank()
+            self.has_bank(),
+            override_parent_slot
         );
 
         let current_poh_slot = self.current_poh_slot();
@@ -699,7 +748,20 @@ impl PohRecorder {
         }
 
         let poh_slot = current_poh_slot;
-        let parent_slot = self.start_slot();
+        // 使用手动指定的父slot（用于分叉攻击）或默认的start_slot
+        let parent_slot = override_parent_slot.unwrap_or_else(|| self.start_slot());
+        
+        if let Some(override_slot) = override_parent_slot {
+            info!(
+                "🎯 分叉攻击：PoH记录器使用手动指定的父slot {} 代替默认的 {} 对于slot {} - 需要重置PoH状态",
+                parent_slot, self.start_slot(), poh_slot
+            );
+            
+            // 分叉攻击时，我们需要重置PoH状态以匹配攻击目标父slot
+            // 这确保了Entry的哈希链与修改后的Bank父子关系一致
+            // 注意：这里我们只记录需要重置，实际重置会在maybe_start_leader中完成
+        }
+        
         PohLeaderStatus::Reached {
             poh_slot,
             parent_slot,

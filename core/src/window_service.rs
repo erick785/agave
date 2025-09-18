@@ -191,6 +191,7 @@ fn run_insert<F>(
     retransmit_sender: &EvictingSender<Vec<shred::Payload>>,
     reed_solomon_cache: &ReedSolomonCache,
     accept_repairs_only: bool,
+    cluster_info: &ClusterInfo,
 ) -> Result<()>
 where
     F: Fn(PossibleDuplicateShred),
@@ -213,7 +214,23 @@ where
             debug_assert_matches!(shred, shred::Payload::Shared(_));
         }
         let shred = Shred::new_from_serialized_shred(shred).ok()?;
-        Some((Cow::Owned(shred), repair))
+
+        // 如果是特定槽的shred，记录接收日志
+        if shred.slot() >= 98 && shred.slot() <= 99 {
+            // info!(
+            //     "📥 接收到shred: slot={}, index={}, is_repair={}, 时间戳={}ms",
+            //     shred.slot(),
+            //     shred.index(),
+            //     repair,
+            //     std::time::SystemTime::now()
+            //         .duration_since(std::time::UNIX_EPOCH)
+            //         .unwrap()
+            //         .as_millis()
+            //         % 100000
+            // );
+        }
+
+        Some((Cow::<Shred>::Owned(shred), repair))
     };
     let now = Instant::now();
     let shreds: Vec<_> = thread_pool.install(|| {
@@ -225,6 +242,30 @@ where
     });
     ws_metrics.handle_packets_elapsed_us += now.elapsed().as_micros() as u64;
     ws_metrics.num_shreds_received += shreds.len();
+
+    // 添加详细的shred插入日志
+    if !shreds.is_empty() {
+        let slot_info: Vec<_> = shreds
+            .iter()
+            .map(|(shred, repair)| (shred.slot(), shred.index(), *repair))
+            .collect();
+
+        // 只显示我们关心的slot范围
+        let interesting_slots: Vec<_> = slot_info
+            .iter()
+            .filter(|(slot, _, _)| *slot >= 98 && *slot <= 99)
+            .collect();
+
+        if !interesting_slots.is_empty() {
+            info!(
+                "🔄 插入shreds到blockstore:(总共{}个shreds) node_id={}",
+                // interesting_slots,
+                shreds.len(),
+                cluster_info.id()
+            );
+        }
+    }
+
     let completed_data_sets = blockstore.insert_shreds_handle_duplicate(
         shreds,
         Some(leader_schedule_cache),
@@ -236,6 +277,21 @@ where
     )?;
 
     if let Some(sender) = completed_data_sets_sender {
+        // 记录完成的数据集
+        if !completed_data_sets.is_empty() {
+            let completed_slots: Vec<_> = completed_data_sets
+                .iter()
+                .filter(|data_set| data_set.slot >= 98 && data_set.slot <= 99)
+                .map(|data_set| data_set.slot)
+                .collect();
+            if !completed_slots.is_empty() {
+                info!(
+                    "✅ 完成的槽数据集: {:?} node_id={}",
+                    completed_slots,
+                    cluster_info.id()
+                );
+            }
+        }
         sender.try_send(completed_data_sets)?;
     }
 
@@ -313,7 +369,7 @@ impl WindowService {
         let (duplicate_sender, duplicate_receiver) = unbounded();
 
         let t_check_duplicate = Self::start_check_duplicate_thread(
-            cluster_info,
+            cluster_info.clone(),
             exit.clone(),
             blockstore.clone(),
             duplicate_receiver,
@@ -330,6 +386,7 @@ impl WindowService {
             completed_data_sets_sender,
             retransmit_sender,
             accept_repairs_only,
+            cluster_info,
         );
 
         WindowService {
@@ -379,6 +436,7 @@ impl WindowService {
         completed_data_sets_sender: Option<CompletedDataSetsSender>,
         retransmit_sender: EvictingSender<Vec<shred::Payload>>,
         accept_repairs_only: bool,
+        cluster_info: Arc<ClusterInfo>,
     ) -> JoinHandle<()> {
         let handle_error = || {
             inc_new_counter_error!("solana-window-insert-error", 1, 1);
@@ -415,6 +473,7 @@ impl WindowService {
                         &retransmit_sender,
                         &reed_solomon_cache,
                         accept_repairs_only,
+                        &cluster_info,
                     ) {
                         ws_metrics.record_error(&e);
                         if Self::should_exit_on_error(e, &handle_error) {

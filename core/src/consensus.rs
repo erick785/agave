@@ -1304,20 +1304,22 @@ impl Tower {
             // Tower isn't that deep.
             return ThresholdDecision::PassedThreshold;
         };
+        //没有找到该分叉的质押
         let Some(fork_stake) = voted_stakes.get(&threshold_vote.slot()) else {
             // We haven't seen any votes on this fork yet, so no stake
             return ThresholdDecision::FailedThreshold(threshold_depth as u64, 0);
         };
 
         let lockout = *fork_stake as f64 / total_stake as f64;
-        trace!(
+        info!(
             "fork_stake slot: {}, threshold_vote slot: {}, lockout: {} fork_stake: {} \
-             total_stake: {}",
+             total_stake: {} threshold_size: {}",
             slot,
             threshold_vote.slot(),
             lockout,
             fork_stake,
-            total_stake
+            total_stake,
+            threshold_size
         );
         if Self::optimistically_bypass_vote_stake_threshold_check(
             tower_before_applying_vote,
@@ -1347,9 +1349,9 @@ impl Tower {
             // purposes. We wish to impose a shallow threshold check to prevent the frequent 8 deep
             // lockouts seen multiple times a day. We check both the 4th and 5th deep here to collect
             // metrics to determine the right depth and threshold percentage to set in the future.
-            (VOTE_THRESHOLD_DEPTH_SHALLOW, SWITCH_FORK_THRESHOLD),
-            (VOTE_THRESHOLD_DEPTH_SHALLOW + 1, SWITCH_FORK_THRESHOLD),
-            (self.threshold_depth, self.threshold_size),
+            (VOTE_THRESHOLD_DEPTH_SHALLOW, SWITCH_FORK_THRESHOLD), // 深度4，阈值38%
+            (VOTE_THRESHOLD_DEPTH_SHALLOW + 1, SWITCH_FORK_THRESHOLD), // 深度5，阈值38%
+            (self.threshold_depth, self.threshold_size),           // 深度8，阈值67%
         ];
 
         // Check one by one and add any failures to be returned

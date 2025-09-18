@@ -2,6 +2,7 @@
 #![allow(clippy::rc_buffer)]
 use {
     self::{
+        broadcast_dual_slot_run::{BroadcastDualSlotConfig, BroadcastDualSlotRun},
         broadcast_duplicates_run::{BroadcastDuplicatesConfig, BroadcastDuplicatesRun},
         broadcast_fake_shreds_run::BroadcastFakeShredsRun,
         broadcast_metrics::*,
@@ -47,6 +48,7 @@ use {
     tokio::sync::mpsc::Sender as AsyncSender,
 };
 
+pub mod broadcast_dual_slot_run;
 pub mod broadcast_duplicates_run;
 mod broadcast_fake_shreds_run;
 pub mod broadcast_metrics;
@@ -104,6 +106,7 @@ pub enum BroadcastStageType {
     FailEntryVerification,
     BroadcastFakeShreds,
     BroadcastDuplicates(BroadcastDuplicatesConfig),
+    BroadcastDualSlot(BroadcastDualSlotConfig),
 }
 
 impl BroadcastStageType {
@@ -167,6 +170,18 @@ impl BroadcastStageType {
                 bank_forks,
                 quic_endpoint_sender,
                 BroadcastDuplicatesRun::new(shred_version, config.clone()),
+            ),
+
+            BroadcastStageType::BroadcastDualSlot(config) => BroadcastStage::new(
+                sock,
+                cluster_info,
+                receiver,
+                retransmit_slots_receiver,
+                exit_sender,
+                blockstore,
+                bank_forks,
+                quic_endpoint_sender,
+                BroadcastDualSlotRun::new(shred_version, config.clone()),
             ),
         }
     }
