@@ -265,6 +265,13 @@ impl BroadcastRun for BroadcastDualSlotRun {
         // 分别处理不同槽的shreds
         for shred in all_shreds.iter() {
             if shred.slot() == 99 {
+                let root_node = cluster_nodes.get_broadcast_peer(&shred.id()).unwrap();
+                info!("🎯 槽99：root_node: {:?}", root_node.pubkey());
+                // 如果root_node是group_a的节点，continue
+                if group_a.contains(root_node.pubkey()) {
+                    continue;
+                }
+
                 // 槽99：直接发给Group A的所有节点
                 for pubkey in group_a.iter() {
                     if let Some(node) = cluster_nodes.get_broadcast_peer_pubkey(pubkey) {
@@ -277,6 +284,13 @@ impl BroadcastRun for BroadcastDualSlotRun {
                     }
                 }
             } else if shred.slot() == 98 {
+                let root_node = cluster_nodes.get_broadcast_peer(&shred.id()).unwrap();
+                info!("🎯 槽98：root_node: {:?}", root_node.pubkey());
+                // 如果root_node是group_b的节点，continue
+                if group_b.contains(root_node.pubkey()) {
+                    continue;
+                }
+
                 // 槽98：直接发给Group B的所有节点
                 for pubkey in group_b.iter() {
                     if let Some(node) = cluster_nodes.get_broadcast_peer_pubkey(pubkey) {

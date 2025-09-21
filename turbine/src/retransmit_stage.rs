@@ -400,9 +400,7 @@ fn retransmit_shred(
     stats: &RetransmitStats,
 ) -> Option<RetransmitShredOutput> {
     // 🚫 暂时关闭retransmit功能 - 不转发任何shreds
-    return None;
 
-    /* 原始代码被注释掉
     let key = shred::layout::get_shred_id(shred.as_ref())?;
     if key.slot() < root_bank.slot()
         || shred_deduper.dedup(key, shred.as_ref(), MAX_DUPLICATE_COUNT)
@@ -471,7 +469,6 @@ fn retransmit_shred(
             Cow::Borrowed(_) => None,
         },
     })
-    */ // 原始代码注释结束
 }
 
 fn get_retransmit_addrs<'a>(
