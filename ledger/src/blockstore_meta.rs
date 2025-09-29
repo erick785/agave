@@ -599,7 +599,11 @@ impl SlotMeta {
     /// This value being true indicates that this meta's slot is the head of a
     /// detached chain of slots.
     pub(crate) fn is_orphan(&self) -> bool {
-        self.parent_slot.is_none()
+        let is_orphan = self.parent_slot.is_none();
+        if is_orphan {
+            info!("🔍 检测到orphan槽{} (无父槽信息)", self.slot);
+        }
+        is_orphan
     }
 
     /// Returns a boolean indicating whether the meta is connected.

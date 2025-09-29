@@ -44,7 +44,8 @@ thread_local! {
     );
 }
 
-const DATA_PLANE_FANOUT: usize = 200;
+//const DATA_PLANE_FANOUT: usize = 200;
+const DATA_PLANE_FANOUT: usize = 2;
 pub(crate) const MAX_NUM_TURBINE_HOPS: usize = 4;
 
 // Limit number of nodes per IP address.
@@ -223,6 +224,110 @@ impl ClusterNodes<BroadcastStage> {
         self.index
             .get(pubkey)
             .and_then(|index| self.nodes[*index].contact_info())
+    }
+
+    pub fn has_children(
+        &self,
+        node_pubkey: &Pubkey,
+        slot_leader: &Pubkey,
+        shred: &ShredId,
+        fanout: usize,
+    ) -> Result<bool, Error> {
+        // Exclude slot leader from list of nodes.
+        if slot_leader == &self.pubkey {
+            return Err(Error::Loopback {
+                leader: *slot_leader,
+                shred: *shred,
+            });
+        }
+
+        // Check if the node exists in our cluster
+        if !self.index.contains_key(node_pubkey) {
+            return Ok(false); // Node doesn't exist, so no children
+        }
+
+        THREAD_LOCAL_WEIGHTED_SHUFFLE.with_borrow_mut(|weighted_shuffle| {
+            weighted_shuffle.clone_from(&self.weighted_shuffle);
+            if let Some(index) = self.index.get(slot_leader) {
+                weighted_shuffle.remove_index(*index);
+            }
+            let mut rng = get_seeded_rng(slot_leader, shred);
+            let (index, mut children) = get_retransmit_peers(
+                fanout,
+                |k| self.nodes[k].pubkey() == node_pubkey,
+                weighted_shuffle.shuffle(&mut rng),
+            );
+
+            // If the node wasn't found in the shuffle, it has no children
+            if index == usize::MAX {
+                return Ok(false);
+            }
+
+            // Check if there are any children
+            Ok(children.next().is_some())
+        })
+    }
+
+    /// Get the number of children a node has in the turbine broadcast tree.
+    /// Returns 0 if the node doesn't exist or has no children.
+    pub fn get_children_count(
+        &self,
+        node_pubkey: &Pubkey,
+        slot_leader: &Pubkey,
+        shred: &ShredId,
+        fanout: usize,
+    ) -> Result<usize, Error> {
+        log::debug!(
+            "🔍 get_children_count called with node_pubkey: {:?}, slot_leader: {:?}, fanout: {}",
+            node_pubkey,
+            slot_leader,
+            fanout
+        );
+
+        // Exclude slot leader from list of nodes.
+        // if slot_leader == &self.pubkey {
+        //     log::debug!("🚨 Loopback detected: slot_leader == self.pubkey");
+        //     return Err(Error::Loopback {
+        //         leader: *slot_leader,
+        //         shred: *shred,
+        //     });
+        // }
+
+        // Check if the node exists in our cluster
+        if !self.index.contains_key(node_pubkey) {
+            log::debug!("⚠️ Node {:?} not found in cluster index", node_pubkey);
+            return Ok(0); // Node doesn't exist, so no children
+        }
+
+        let node_index = self.index[node_pubkey];
+        log::debug!("✅ Node {:?} found at index: {}", node_pubkey, node_index);
+
+        THREAD_LOCAL_WEIGHTED_SHUFFLE.with_borrow_mut(|weighted_shuffle| {
+            weighted_shuffle.clone_from(&self.weighted_shuffle);
+            if let Some(index) = self.index.get(slot_leader) {
+                log::debug!("🔄 Removing slot_leader index: {}", index);
+                weighted_shuffle.remove_index(*index);
+            }
+            let mut rng = get_seeded_rng(slot_leader, shred);
+            let (index, children) = get_retransmit_peers(
+                fanout,
+                |k| self.nodes[k].pubkey() == node_pubkey,
+                weighted_shuffle.shuffle(&mut rng),
+            );
+
+            log::debug!("📍 Node index in shuffle: {}", index);
+
+            // If the node wasn't found in the shuffle, it has no children
+            if index == usize::MAX {
+                log::debug!("⚠️ Node not found in weighted shuffle");
+                return Ok(0);
+            }
+
+            // Count the children
+            let children_count = children.count();
+            log::debug!("👶 Children count: {}", children_count);
+            Ok(children_count)
+        })
     }
 }
 

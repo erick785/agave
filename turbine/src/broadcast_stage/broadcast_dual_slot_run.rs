@@ -266,14 +266,65 @@ impl BroadcastRun for BroadcastDualSlotRun {
         for shred in all_shreds.iter() {
             if shred.slot() == 99 {
                 let root_node = cluster_nodes.get_broadcast_peer(&shred.id()).unwrap();
-                info!("🎯 槽99：root_node: {:?}", root_node.pubkey());
+
+                // let has_children = cluster_nodes
+                //     .has_children(&root_node.pubkey(), &cluster_info.id(), &shred.id(), 200)
+                //     .unwrap();
+                // info!("🎯 槽99：has_children: {:?}", has_children);
+
+                // let children_count = cluster_nodes
+                //     .get_children_count(&root_node.pubkey(), &cluster_info.id(), &shred.id(), 200)
+                //     .unwrap();
+                // info!("🎯 槽99：children_count: {:?}", children_count);
+
+                info!(
+                    "🎯 槽99：shred_id: {:?}, root_node: {:?}",
+                    shred.id(),
+                    root_node.pubkey()
+                );
                 // 如果root_node是group_a的节点，continue
-                if group_a.contains(root_node.pubkey()) {
-                    continue;
+                // if group_a.contains(root_node.pubkey()) {
+                //     continue;
+                // }
+
+                for pubkey in group_a.iter() {
+                    let children_count = cluster_nodes
+                        .get_children_count(&pubkey, &cluster_info.id(), &shred.id(), 2)
+                        .unwrap();
+                    info!(
+                        "🎯 槽99： pubkey: {:?}, children_count: {:?}",
+                        pubkey, children_count
+                    );
+                }
+
+                for pubkey in group_b.iter() {
+                    let children_count = cluster_nodes
+                        .get_children_count(&pubkey, &cluster_info.id(), &shred.id(), 2)
+                        .unwrap();
+                    info!(
+                        "🎯 槽99： pubkey: {:?}, children_count: {:?}",
+                        pubkey, children_count
+                    );
                 }
 
                 // 槽99：直接发给Group A的所有节点
                 for pubkey in group_a.iter() {
+                    // if pubkey == root_node.pubkey() {
+                    //     info!("🎯 root_node是group_a的节点，skip");
+                    //     continue;
+                    // }
+
+                    let children_count = cluster_nodes
+                        .get_children_count(&pubkey, &cluster_info.id(), &shred.id(), 2)
+                        .unwrap();
+                    if children_count != 0 {
+                        info!(
+                            "🎯 槽99： pubkey: {:?}, children_count: {:?} skip",
+                            pubkey, children_count
+                        );
+                        continue;
+                    }
+
                     if let Some(node) = cluster_nodes.get_broadcast_peer_pubkey(pubkey) {
                         if let Some(tvu_addr) = node.tvu(Protocol::UDP) {
                             if socket_addr_space.check(&tvu_addr) {
@@ -285,14 +336,34 @@ impl BroadcastRun for BroadcastDualSlotRun {
                 }
             } else if shred.slot() == 98 {
                 let root_node = cluster_nodes.get_broadcast_peer(&shred.id()).unwrap();
-                info!("🎯 槽98：root_node: {:?}", root_node.pubkey());
-                // 如果root_node是group_b的节点，continue
-                if group_b.contains(root_node.pubkey()) {
-                    continue;
-                }
+                info!(
+                    "🎯 槽98：shred_id: {:?}, root_node: {:?}",
+                    shred.id(),
+                    root_node.pubkey()
+                );
+                //如果root_node是group_b的节点，continue
+                // if group_b.contains(root_node.pubkey()) {
+                //     continue;
+                // }
 
                 // 槽98：直接发给Group B的所有节点
                 for pubkey in group_b.iter() {
+                    // if pubkey == root_node.pubkey() {
+                    //     info!("🎯 root_node是group_b的节点，skip");
+                    //     continue;
+                    // }
+
+                    let children_count = cluster_nodes
+                        .get_children_count(&pubkey, &cluster_info.id(), &shred.id(), 2)
+                        .unwrap();
+                    if children_count != 0 {
+                        info!(
+                            "🎯 槽98： pubkey: {:?}, children_count: {:?} skip",
+                            pubkey, children_count
+                        );
+                        continue;
+                    }
+
                     if let Some(node) = cluster_nodes.get_broadcast_peer_pubkey(pubkey) {
                         if let Some(tvu_addr) = node.tvu(Protocol::UDP) {
                             if socket_addr_space.check(&tvu_addr) {

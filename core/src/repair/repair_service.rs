@@ -850,12 +850,22 @@ impl RepairService {
                 }
             }
 
+            info!(
+                "🔍 检测到槽{}需要更多shreds，当前received={}, consumed={}",
+                slot, slot_meta.received, slot_meta.consumed
+            );
             match RepairService::request_repair_if_needed(
                 outstanding_repairs,
                 ShredRepairType::HighestShred(slot, slot_meta.received),
             ) {
-                Some(repair_request) => vec![repair_request],
-                None => vec![],
+                Some(repair_request) => {
+                    info!("✅ 为槽{}生成HighestShred repair请求", slot);
+                    vec![repair_request]
+                }
+                None => {
+                    info!("⏭️  槽{}的HighestShred repair请求已存在，跳过", slot);
+                    vec![]
+                }
             }
         } else {
             blockstore
@@ -1074,6 +1084,15 @@ impl RepairService {
     ) -> Option<ShredRepairType> {
         if let Entry::Vacant(entry) = outstanding_repairs.entry(repair_request) {
             entry.insert(timestamp());
+            info!(
+                "🔧 发起Repair请求: {:?}, 时间戳={}ms",
+                repair_request,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis()
+                    % 100000
+            );
             Some(repair_request)
         } else {
             None

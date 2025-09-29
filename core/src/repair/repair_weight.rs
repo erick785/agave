@@ -572,9 +572,12 @@ impl RepairWeight {
                             outstanding_repairs,
                             ShredRepairType::Orphan(new_orphan_root),
                         ) {
+                            info!("✅ 为更新的orphan根槽{}生成repair请求", new_orphan_root);
                             repairs.push(repair_request);
                             processed_slots.insert(new_orphan_root);
                             new_best_orphan_requests += 1;
+                        } else {
+                            info!("⏭️  更新的orphan根槽{}的repair请求已存在", new_orphan_root);
                         }
                     }
                 }
@@ -587,13 +590,17 @@ impl RepairWeight {
             if new_best_orphan_requests >= max_new_orphans {
                 break;
             }
+            info!("🔍 发现orphan槽{}, 准备发起Orphan repair请求", new_orphan);
             if let Some(repair_request) = RepairService::request_repair_if_needed(
                 outstanding_repairs,
                 ShredRepairType::Orphan(new_orphan),
             ) {
+                info!("✅ 为orphan槽{}生成Orphan repair请求", new_orphan);
                 repairs.push(repair_request);
                 processed_slots.insert(new_orphan);
                 new_best_orphan_requests += 1;
+            } else {
+                info!("⏭️  orphan槽{}的repair请求已存在，跳过", new_orphan);
             }
         }
     }

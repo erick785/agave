@@ -5970,7 +5970,7 @@ fn test_invalid_forks_persisted_on_restart() {
 fn test_fork_attack_with_modified_leader_logic() {
     pub const RUST_LOG_FILTER_TEST: &str =
     "error,solana_turbine::broadcast_stage::broadcast_dual_slot_run=info,solana_turbine::broadcast_stage=debug,solana_core::replay_stage=info,solana_core::window_service=info,solana_core::repair_service=info,solana_core::serve_repair=info,solana_local_cluster=info,local_cluster=info,solana_ledger::blockstore_processor=warn,solana_entry=warn";
-
+    //"error,solana_turbine::broadcast_stage::broadcast_dual_slot_run=info,solana_turbine::broadcast_stage=debug,solana_core::replay_stage=info,solana_core::window_service=info,solana_core::repair::repair_service=info,solana_core::repair::serve_repair=info,solana_core::repair::repair_weight=info,solana_ledger::blockstore=info,solana_ledger::blockstore_meta=info,solana_local_cluster=info,local_cluster=info,solana_ledger::blockstore_processor=warn,solana_entry=warn";
     solana_logger::setup_with_default(RUST_LOG_FILTER_TEST);
 
     info!("🚀 开始分叉攻击测试：测试修改后的领导者逻辑");
@@ -5978,24 +5978,28 @@ fn test_fork_attack_with_modified_leader_logic() {
     let total_stake = 1000;
     let attacker_stake = 320; // 32%
                               // A组
-    let normal_node_b_stake = 340; // 34%
-                                   // B组
-    let normal_node_c_stake = 170; // 17%
-    let normal_node_d_stake = 170; // 17%
+    let normal_node_b_stake = 340; // 17%
+
+    // B组
+    let normal_node_c_stake = 110; // 17%
+    let normal_node_d_stake = 110; // 17%
+    let normal_node_e_stake = 120; // 17%
 
     let node_stakes = vec![
         attacker_stake,      // 攻击者节点
         normal_node_b_stake, // 正常节点B
         normal_node_c_stake, // 正常节点C
         normal_node_d_stake, // 正常节点D
+        normal_node_e_stake, // 正常节点E
     ];
 
     info!(
-        "网络质押分布：攻击者{}%，节点B {}%，节点C {}%，节点D {}%",
+        "网络质押分布：攻击者{}%，节点B {}%，节点C {}%，节点D {}%，节点E {}%",
         (attacker_stake * 100) / total_stake,
         (normal_node_b_stake * 100) / total_stake,
         (normal_node_c_stake * 100) / total_stake,
         (normal_node_d_stake * 100) / total_stake,
+        (normal_node_e_stake * 100) / total_stake,
     );
 
     // 使用已知有效的密钥对，第三个节点使用新生成的密钥对
@@ -6004,28 +6008,31 @@ fn test_fork_attack_with_modified_leader_logic() {
     (Arc::new(Keypair::from_base58_string("2saHBBoTkLMmttmPQP8KfBkcCw45S5cwtV3wTdGCscRC8uxdgvHxpHiWXKx4LvJjNJtnNcbSv5NdheokFFqnNDt8")), true), // 节点B
     (Arc::new(Keypair::from_base58_string("4mx9yoFBeYasDKBGDWCTWGJdWuJCKbgqmuP8bN9umybCh5Jzngw7KQxe99Rf5uzfyzgba1i65rJW4Wqk7Ab5S8ye")), true), // 节点C 
     (Arc::new(Keypair::from_base58_string("2XFPyuzPuXMsPnkH98UNcQpfA7M4b2TUhRxcWEoWjy4M6ojQ7HGJSvotktEVbaq49Qxt16wUjdqvSJc6ecbFfZwj")), true), // 节点D 
+    (Arc::new(Keypair::from_base58_string("5U4JFmHa9g5TQxuJtKHZyW9LKSLTRmCppFVpxUaDdz76MVUJygTGD55n1hKJ2wGb8ugPCKTmAGucApxUFh4VBQmE")), true), // 节点A
 ];
 
     //节点A key AqEWUK8pdsfY2CTrBQLGS8w8ndMeuFcDpCkFwWaicaLL vote_key FKa3LXwxcRGxLb8VbRcVciacL3J4VHWKTEqb4amVpykD
     //节点B key Bz8byUe5bFKcQZWMdU1NQZuJ2GAN3vZvzkahcynXQi5S vote_key 4R1xjh5tvK3vLzpMrfpxkSDKMB2k51DqFALynkU42CGJ
     //节点C key CsSuUpFWedE7fQAa61TA2NZ2442dJkYhh1Hj4MSKWqz8 vote_key 7FB51SRKHepjLWgjEXw8NXV566kwpVqg1ELHKbC5M88k
     //节点D key DyKQi4vsqymCdttr83EssuNT23i5edRtEh6aiV6sJwFB
+    //节点E key EoSpaCkHsw9okTWy5GSYfSuFE4XB4YrSuDupnm1y9ZpC
 
     let validator_pubkeys: Vec<Pubkey> = validator_keypairs
         .iter()
         .map(|(kp, _)| kp.pubkey())
         .collect();
 
-    let (attacker_id, node_b_id, node_c_id, node_d_id) = (
+    let (attacker_id, node_b_id, node_c_id, node_d_id, node_e_id) = (
         validator_pubkeys[0],
         validator_pubkeys[1],
         validator_pubkeys[2],
         validator_pubkeys[3],
+        validator_pubkeys[4],
     );
 
     info!(
-        "节点标识：攻击者={}, 节点B={}, 节点C={}, 节点D={}",
-        attacker_id, node_b_id, node_c_id, node_d_id
+        "节点标识：攻击者={}, 节点B={}, 节点C={}, 节点D={}, 节点E={}",
+        attacker_id, node_b_id, node_c_id, node_d_id, node_e_id
     );
 
     // 为攻击者节点配置双槽广播
@@ -6035,8 +6042,8 @@ fn test_fork_attack_with_modified_leader_logic() {
     // 简化版本：只缓存槽3和槽4，然后以不同顺序发送给两组
     let dual_slot_config = BroadcastDualSlotConfig {
         partition: DualSlotPartition::GroupPubkeys {
-            group_a: vec![node_b_id],            // 节点B单独一组
-            group_b: vec![node_c_id, node_d_id], // 节点C和D为一组
+            group_a: vec![node_b_id],
+            group_b: vec![node_c_id, node_d_id, node_e_id],
         },
         dual_slot_sender: Some(dual_slot_sender),
     };
@@ -6048,12 +6055,14 @@ fn test_fork_attack_with_modified_leader_logic() {
     let normal_config_b = ValidatorConfig::default_for_test();
     let normal_config_c = ValidatorConfig::default_for_test();
     let normal_config_d = ValidatorConfig::default_for_test();
+    let normal_config_e = ValidatorConfig::default_for_test();
 
     let validator_configs = vec![
         attacker_config, // 攻击者
         normal_config_b, // 节点B
         normal_config_c, // 节点C
         normal_config_d, // 节点D
+        normal_config_e, // 节点E
     ];
 
     info!("创建4节点集群...");
@@ -6091,21 +6100,21 @@ fn test_fork_attack_with_modified_leader_logic() {
     let node_b_ledger_path = cluster.ledger_path(&node_b_id);
     let node_c_ledger_path = cluster.ledger_path(&node_c_id);
     let node_d_ledger_path = cluster.ledger_path(&node_d_id);
-
+    let node_e_ledger_path = cluster.ledger_path(&node_e_id);
     // 记录攻击前的状态
     let initial_attacker_root = root_in_tower(&attacker_ledger_path, &attacker_id);
     let initial_node_b_root = root_in_tower(&node_b_ledger_path, &node_b_id);
     let initial_node_c_root = root_in_tower(&node_c_ledger_path, &node_c_id);
     let initial_node_d_root = root_in_tower(&node_d_ledger_path, &node_d_id);
-
+    let initial_node_e_root = root_in_tower(&node_e_ledger_path, &node_e_id);
     info!(
-        "攻击前状态 - 攻击者root: {:?}, 节点B root: {:?}, 节点C root: {:?}, 节点D root: {:?}",
-        initial_attacker_root, initial_node_b_root, initial_node_c_root, initial_node_d_root
+        "攻击前状态 - 攻击者root: {:?}, 节点B root: {:?}, 节点C root: {:?}, 节点D root: {:?}, 节点E root: {:?}",
+        initial_attacker_root, initial_node_b_root, initial_node_c_root, initial_node_d_root, initial_node_e_root
     );
 
     info!(
-        "攻击前状态 - 攻击者root: {:?}, 节点B root: {:?}, 节点C root: {:?}, 节点D root: {:?}",
-        initial_attacker_root, initial_node_b_root, initial_node_c_root, initial_node_d_root
+        "攻击前状态 - 攻击者root: {:?}, 节点B root: {:?}, 节点C root: {:?}, 节点D root: {:?}, 节点E root: {:?}",
+        initial_attacker_root, initial_node_b_root, initial_node_c_root, initial_node_d_root, initial_node_e_root
     );
 
     // 监控分叉攻击的发生
@@ -6167,12 +6176,14 @@ fn test_fork_attack_with_modified_leader_logic() {
     let post_attack_node_b_root = root_in_tower(&node_b_ledger_path, &node_b_id);
     let post_attack_node_c_root = root_in_tower(&node_c_ledger_path, &node_c_id);
     let post_attack_node_d_root = root_in_tower(&node_d_ledger_path, &node_d_id);
+    let post_attack_node_e_root = root_in_tower(&node_e_ledger_path, &node_e_id);
     info!(
-        "攻击后状态 - 攻击者root: {:?}, 节点B root: {:?}, 节点C root: {:?}, 节点D root: {:?}",
+        "攻击后状态 - 攻击者root: {:?}, 节点B root: {:?}, 节点C root: {:?}, 节点D root: {:?}, 节点E root: {:?}",
         post_attack_attacker_root,
         post_attack_node_b_root,
         post_attack_node_c_root,
-        post_attack_node_d_root
+        post_attack_node_d_root,
+        post_attack_node_e_root
     );
 
     // 分析攻击效果
@@ -6181,9 +6192,10 @@ fn test_fork_attack_with_modified_leader_logic() {
     let node_b_progress = post_attack_node_b_root.unwrap_or(0) - initial_node_b_root.unwrap_or(0);
     let node_c_progress = post_attack_node_c_root.unwrap_or(0) - initial_node_c_root.unwrap_or(0);
     let node_d_progress = post_attack_node_d_root.unwrap_or(0) - initial_node_d_root.unwrap_or(0);
+    let node_e_progress = post_attack_node_e_root.unwrap_or(0) - initial_node_e_root.unwrap_or(0);
     info!(
-        "Root进展分析 - 攻击者: +{}, 节点B: +{}, 节点C: +{}, 节点D: +{}",
-        attacker_progress, node_b_progress, node_c_progress, node_d_progress
+        "Root进展分析 - 攻击者: +{}, 节点B: +{}, 节点C: +{}, 节点D: +{}, 节点E: +{}",
+        attacker_progress, node_b_progress, node_c_progress, node_d_progress, node_e_progress
     );
 
     // 检查是否有slot被创建（验证我们的修改是否工作）
@@ -6201,7 +6213,7 @@ fn test_fork_attack_with_modified_leader_logic() {
 
     // 验证攻击是否对网络产生了影响
     let network_affected = {
-        let total_progress = node_b_progress + node_c_progress + node_d_progress;
+        let total_progress = node_b_progress + node_c_progress + node_d_progress + node_e_progress;
         let expected_normal_progress = attack_duration.as_secs() * 2; // 两个节点的预期进展
 
         // 如果总进展明显少于预期，说明攻击有效果
@@ -6232,4 +6244,58 @@ fn test_fork_attack_with_modified_leader_logic() {
     solana_core::replay_stage::clear_fork_attacker();
     std::env::remove_var("SOLANA_FORKING_STRATEGY");
     std::env::remove_var("SOLANA_FORK_TARGET_SLOT");
+}
+
+#[test]
+fn test_generate_keypair_with_pubkey_starting_with_e() {
+    use solana_keypair::Keypair;
+    use solana_signer::Signer;
+
+    println!("🔑 开始生成公钥以'E'开头的私钥");
+
+    let mut attempts = 0;
+    let max_attempts = 1000000; // 最大尝试次数
+
+    loop {
+        attempts += 1;
+
+        // 生成新的随机私钥
+        let keypair = Keypair::new();
+        let pubkey = keypair.pubkey();
+        let pubkey_str = pubkey.to_string();
+
+        // 检查公钥是否以'E'开头
+        if pubkey_str.starts_with('E') {
+            // 获取私钥的base58字符串
+            let private_key_base58 = keypair.to_base58_string();
+
+            println!("✅ 找到符合条件的密钥对！");
+            println!("🔢 尝试次数: {}", attempts);
+            println!("🔐 私钥 (Base58): {}", private_key_base58);
+            println!("🗝️  公钥: {}", pubkey_str);
+            println!("🎯 公钥首字符: {}", pubkey_str.chars().next().unwrap());
+
+            // 验证私钥可以正确恢复公钥
+            let recovered_keypair = Keypair::from_base58_string(&private_key_base58);
+            assert_eq!(recovered_keypair.pubkey(), pubkey, "私钥恢复验证失败");
+            println!("✅ 私钥恢复验证成功");
+
+            break;
+        }
+
+        // 每10000次尝试打印一次进度
+        if attempts % 10000 == 0 {
+            println!("🔄 已尝试 {} 次，继续搜索...", attempts);
+        }
+
+        // 防止无限循环
+        if attempts >= max_attempts {
+            panic!(
+                "❌ 超过最大尝试次数 {} 仍未找到符合条件的密钥对",
+                max_attempts
+            );
+        }
+    }
+
+    info!("🎉 测试完成 - 成功生成公钥以'E'开头的密钥对");
 }

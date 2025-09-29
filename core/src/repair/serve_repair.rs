@@ -419,26 +419,42 @@ impl ServeRepair {
         request: RepairProtocol,
         stats: &mut ServeRepairStats,
         ping_cache: &mut PingCache,
+        my_pubkey: &Pubkey,
     ) -> Option<PacketBatch> {
         let now = Instant::now();
         let (res, label) = {
             match &request {
                 RepairProtocol::WindowIndex {
-                    header: RepairRequestHeader { nonce, .. },
+                    header: RepairRequestHeader { nonce, sender, .. },
                     slot,
                     shred_index,
                 } => {
                     stats.window_index += 1;
-                    let batch = Self::run_window_request(
+                    info!(
+                        "📥 收到repair请求: 槽{} shred_index={} from={} sender={}",
+                        slot, shred_index, from_addr, sender
+                    );
+
+                    // 特殊的条件响应逻辑
+                    let batch = Self::run_conditional_window_request(
                         recycler,
                         from_addr,
                         blockstore,
                         *slot,
                         *shred_index,
                         *nonce,
+                        *sender,
+                        my_pubkey,
                     );
+
                     if batch.is_none() {
                         stats.window_index_misses += 1;
+                        info!(
+                            "❌ repair响应失败: 槽{} shred_index={} 未找到",
+                            slot, shred_index
+                        );
+                    } else {
+                        info!("✅ repair响应成功: 槽{} shred_index={}", slot, shred_index);
                     }
                     (batch, "WindowIndexWithNonce")
                 }
@@ -465,17 +481,21 @@ impl ServeRepair {
                     slot,
                 } => {
                     stats.orphan += 1;
-                    (
-                        Self::run_orphan(
-                            recycler,
-                            from_addr,
-                            blockstore,
-                            *slot,
-                            MAX_ORPHAN_REPAIR_RESPONSES,
-                            *nonce,
-                        ),
-                        "OrphanWithNonce",
-                    )
+                    info!("📥 收到Orphan repair请求: 槽{} from={}", slot, from_addr);
+                    let batch = Self::run_orphan(
+                        recycler,
+                        from_addr,
+                        blockstore,
+                        *slot,
+                        MAX_ORPHAN_REPAIR_RESPONSES,
+                        *nonce,
+                    );
+                    if batch.is_none() {
+                        info!("❌ Orphan repair响应失败: 槽{} 未找到父槽信息", slot);
+                    } else {
+                        info!("✅ Orphan repair响应成功: 槽{} 提供父槽信息", slot);
+                    }
+                    (batch, "OrphanWithNonce")
                 }
                 RepairProtocol::AncestorHashes {
                     header: RepairRequestHeader { nonce, .. },
@@ -1008,9 +1028,15 @@ impl ServeRepair {
                 }
             }
             stats.processed += 1;
-            let Some(rsp) =
-                Self::handle_repair(recycler, &from_addr, blockstore, request, stats, ping_cache)
-            else {
+            let Some(rsp) = Self::handle_repair(
+                recycler,
+                &from_addr,
+                blockstore,
+                request,
+                stats,
+                ping_cache,
+                &identity_keypair.pubkey(),
+            ) else {
                 continue;
             };
             let num_response_packets = rsp.len();
@@ -1098,11 +1124,16 @@ impl ServeRepair {
             nonce,
             identity_keypair,
         )?;
-        debug!(
-            "Sending repair request from {} to {} for {:#?}",
+        info!(
+            "📤 发送repair请求: 从{} 到{} 请求{:?}, 时间戳={}ms",
             identity_keypair.pubkey(),
             peer.pubkey,
-            repair_request
+            repair_request,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+                % 100000
         );
         match repair_protocol {
             Protocol::UDP => Ok(Some((peer.serve_repair, out))),
@@ -1305,6 +1336,101 @@ impl ServeRepair {
             PinnedPacketBatch::new_unpinned_with_recycler_data(
                 recycler,
                 "run_window_request",
+                vec![packet],
+            )
+            .into(),
+        )
+    }
+
+    fn run_conditional_window_request(
+        recycler: &PacketBatchRecycler,
+        from_addr: &SocketAddr,
+        blockstore: &Blockstore,
+        requested_slot: Slot,
+        shred_index: u64,
+        nonce: Nonce,
+        sender_pubkey: Pubkey,
+        my_pubkey: &Pubkey,
+    ) -> Option<PacketBatch> {
+        use solana_pubkey::Pubkey;
+        use std::str::FromStr;
+
+        // 定义特殊节点的pubkey
+        let target_responder =
+            Pubkey::from_str("AqEWUK8pdsfY2CTrBQLGS8w8ndMeuFcDpCkFwWaicaLL").unwrap();
+        let special_requester =
+            Pubkey::from_str("Bz8byUe5bFKcQZWMdU1NQZuJ2GAN3vZvzkahcynXQi5S").unwrap();
+
+        // 检查当前节点是否是目标响应者，
+        if *my_pubkey != target_responder {
+            // 如果当前节点不是目标响应者，使用原始逻辑
+            info!("🔄 非目标响应者 {}，使用标准repair逻辑", my_pubkey);
+            return Self::run_window_request(
+                recycler,
+                from_addr,
+                blockstore,
+                requested_slot,
+                shred_index,
+                nonce,
+            );
+        } else {
+            // response_slot 不为99或者98则使用原始逻辑
+            if requested_slot != 99 && requested_slot != 98 {
+                info!("🔄 非特殊槽位 {}，使用标准repair逻辑", requested_slot);
+                return Self::run_window_request(
+                    recycler,
+                    from_addr,
+                    blockstore,
+                    requested_slot,
+                    shred_index,
+                    nonce,
+                );
+            }
+        }
+
+        info!(
+            "🎯 目标响应者 {} 处理条件repair请求: 请求槽={}, 请求者={}, 索引={}",
+            my_pubkey, requested_slot, sender_pubkey, shred_index
+        );
+
+        // 条件响应逻辑：
+        // 1. 如果请求者是 Bz8byUe5bFKcQZWMdU1NQZuJ2GAN3vZvzkahcynXQi5S，只给槽99
+        // 2. 如果请求者是其他人，只给槽98
+        let response_slot = if sender_pubkey == special_requester {
+            info!("🔐 特殊请求者，返回槽99的数据");
+            99
+        } else {
+            info!("🔒 普通请求者，返回槽98的数据");
+            98
+        };
+
+        // 只有当请求的槽与我们决定返回的槽匹配时才响应
+        if requested_slot != response_slot {
+            info!(
+                "❌ 槽不匹配：请求槽={}, 响应槽={}, 拒绝响应",
+                requested_slot, response_slot
+            );
+            return None;
+        }
+
+        // 使用响应槽来查找shred
+        let packet = repair_response::repair_response_packet(
+            blockstore,
+            response_slot,
+            shred_index,
+            from_addr,
+            nonce,
+        )?;
+
+        info!(
+            "✅ 条件repair响应成功: 槽{} shred_index={} 给请求者={}",
+            response_slot, shred_index, sender_pubkey
+        );
+
+        Some(
+            PinnedPacketBatch::new_unpinned_with_recycler_data(
+                recycler,
+                "run_conditional_window_request",
                 vec![packet],
             )
             .into(),

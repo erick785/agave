@@ -649,7 +649,11 @@ impl Blockstore {
     /// For other return values, it means either the slot is not in the
     /// blockstore or the slot isn't an orphan slot.
     pub fn orphan(&self, slot: Slot) -> Result<Option<bool>> {
-        self.orphans_cf.get(slot)
+        let result = self.orphans_cf.get(slot);
+        if let Ok(Some(true)) = result {
+            info!("🚨 槽{}被标记为orphan", slot);
+        }
+        result
     }
 
     pub fn slot_meta_iterator(

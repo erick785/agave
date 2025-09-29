@@ -258,9 +258,9 @@ where
 
         if !interesting_slots.is_empty() {
             info!(
-                "🔄 插入shreds到blockstore:(总共{}个shreds) node_id={}",
-                // interesting_slots,
+                "🔄 插入shreds到blockstore:(总共{}个shreds) interesting_slots={:?} node_id={}",
                 shreds.len(),
+                interesting_slots,
                 cluster_info.id()
             );
         }
