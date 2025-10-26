@@ -215,10 +215,10 @@ where
         }
         let shred = Shred::new_from_serialized_shred(shred).ok()?;
 
-        // 如果是特定槽的shred，记录接收日志
+        // If shred is from specific slots, log reception
         if shred.slot() >= 98 && shred.slot() <= 99 {
             // info!(
-            //     "📥 接收到shred: slot={}, index={}, is_repair={}, 时间戳={}ms",
+            //     "📥 Received shred: slot={}, index={}, is_repair={}, timestamp={}ms",
             //     shred.slot(),
             //     shred.index(),
             //     repair,
@@ -243,14 +243,14 @@ where
     ws_metrics.handle_packets_elapsed_us += now.elapsed().as_micros() as u64;
     ws_metrics.num_shreds_received += shreds.len();
 
-    // 添加详细的shred插入日志
+    // Add detailed shred insertion logging
     if !shreds.is_empty() {
         let slot_info: Vec<_> = shreds
             .iter()
             .map(|(shred, repair)| (shred.slot(), shred.index(), *repair))
             .collect();
 
-        // 只显示我们关心的slot范围
+        // Only display the slot range we care about
         let interesting_slots: Vec<_> = slot_info
             .iter()
             .filter(|(slot, _, _)| *slot >= 98 && *slot <= 99)
@@ -258,7 +258,7 @@ where
 
         if !interesting_slots.is_empty() {
             info!(
-                "🔄 插入shreds到blockstore:(总共{}个shreds) interesting_slots={:?} node_id={}",
+                "🔄 Inserting shreds to blockstore: ({} shreds total) interesting_slots={:?} node_id={}",
                 shreds.len(),
                 interesting_slots,
                 cluster_info.id()
@@ -277,7 +277,7 @@ where
     )?;
 
     if let Some(sender) = completed_data_sets_sender {
-        // 记录完成的数据集
+        // Log completed data sets
         if !completed_data_sets.is_empty() {
             let completed_slots: Vec<_> = completed_data_sets
                 .iter()
@@ -286,7 +286,7 @@ where
                 .collect();
             if !completed_slots.is_empty() {
                 info!(
-                    "✅ 完成的槽数据集: {:?} node_id={}",
+                    "✅ Completed slot data sets: {:?} node_id={}",
                     completed_slots,
                     cluster_info.id()
                 );

@@ -120,7 +120,3 @@ problem is solved by this code?" On the other hand, if a test does fail and you 
 better way to solve the same problem, a Pull Request with your solution would most certainly be
 welcome! Likewise, if rewriting a test can better communicate what code it's protecting, please
 send us that patch!
-
-/Users/chenxuc/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-stake-interface-1.2.1/src/state.rs
-pub const DEFAULT_WARMUP_COOLDOWN_RATE: f64 = 1.0; // 100% - 即时激活
-pub const NEW_WARMUP_COOLDOWN_RATE: f64 = 1.0; // 100% - 即时激活

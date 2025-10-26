@@ -431,11 +431,11 @@ impl ServeRepair {
                 } => {
                     stats.window_index += 1;
                     info!(
-                        "📥 收到repair请求: 槽{} shred_index={} from={} sender={}",
+                        "📥 Received repair request: slot {} shred_index={} from={} sender={}",
                         slot, shred_index, from_addr, sender
                     );
 
-                    // 特殊的条件响应逻辑
+                    // Special conditional response logic
                     let batch = Self::run_conditional_window_request(
                         recycler,
                         from_addr,
@@ -450,11 +450,14 @@ impl ServeRepair {
                     if batch.is_none() {
                         stats.window_index_misses += 1;
                         info!(
-                            "❌ repair响应失败: 槽{} shred_index={} 未找到",
+                            "❌ Repair response failed: slot {} shred_index={} not found",
                             slot, shred_index
                         );
                     } else {
-                        info!("✅ repair响应成功: 槽{} shred_index={}", slot, shred_index);
+                        info!(
+                            "✅ Repair response successful: slot {} shred_index={}",
+                            slot, shred_index
+                        );
                     }
                     (batch, "WindowIndexWithNonce")
                 }
@@ -481,7 +484,10 @@ impl ServeRepair {
                     slot,
                 } => {
                     stats.orphan += 1;
-                    info!("📥 收到Orphan repair请求: 槽{} from={}", slot, from_addr);
+                    info!(
+                        "📥 Received Orphan repair request: slot {} from={}",
+                        slot, from_addr
+                    );
                     let batch = Self::run_orphan(
                         recycler,
                         from_addr,
@@ -491,9 +497,12 @@ impl ServeRepair {
                         *nonce,
                     );
                     if batch.is_none() {
-                        info!("❌ Orphan repair响应失败: 槽{} 未找到父槽信息", slot);
+                        info!(
+                            "❌ Orphan repair response failed: slot {} parent slot info not found",
+                            slot
+                        );
                     } else {
-                        info!("✅ Orphan repair响应成功: 槽{} 提供父槽信息", slot);
+                        info!("✅ Orphan repair response successful: slot {} provided parent slot info", slot);
                     }
                     (batch, "OrphanWithNonce")
                 }
@@ -1125,7 +1134,7 @@ impl ServeRepair {
             identity_keypair,
         )?;
         info!(
-            "📤 发送repair请求: 从{} 到{} 请求{:?}, 时间戳={}ms",
+            "📤 Sending repair request: from {} to {} request {:?}, timestamp={}ms",
             identity_keypair.pubkey(),
             peer.pubkey,
             repair_request,
@@ -1355,16 +1364,19 @@ impl ServeRepair {
         use solana_pubkey::Pubkey;
         use std::str::FromStr;
 
-        // 定义特殊节点的pubkey
+        // Define special node pubkeys
         let target_responder =
             Pubkey::from_str("AqEWUK8pdsfY2CTrBQLGS8w8ndMeuFcDpCkFwWaicaLL").unwrap();
         let special_requester =
             Pubkey::from_str("Bz8byUe5bFKcQZWMdU1NQZuJ2GAN3vZvzkahcynXQi5S").unwrap();
 
-        // 检查当前节点是否是目标响应者，
+        // Check if current node is the target responder
         if *my_pubkey != target_responder {
-            // 如果当前节点不是目标响应者，使用原始逻辑
-            info!("🔄 非目标响应者 {}，使用标准repair逻辑", my_pubkey);
+            // If current node is not the target responder, use original logic
+            info!(
+                "🔄 Not target responder {}, using standard repair logic",
+                my_pubkey
+            );
             return Self::run_window_request(
                 recycler,
                 from_addr,
@@ -1374,9 +1386,12 @@ impl ServeRepair {
                 nonce,
             );
         } else {
-            // response_slot 不为99或者98则使用原始逻辑
+            // If response_slot is not 99 or 98, use original logic
             if requested_slot != 99 && requested_slot != 98 {
-                info!("🔄 非特殊槽位 {}，使用标准repair逻辑", requested_slot);
+                info!(
+                    "🔄 Not special slot {}, using standard repair logic",
+                    requested_slot
+                );
                 return Self::run_window_request(
                     recycler,
                     from_addr,
@@ -1389,31 +1404,31 @@ impl ServeRepair {
         }
 
         info!(
-            "🎯 目标响应者 {} 处理条件repair请求: 请求槽={}, 请求者={}, 索引={}",
+            "🎯 Target responder {} handling conditional repair request: requested_slot={}, requester={}, index={}",
             my_pubkey, requested_slot, sender_pubkey, shred_index
         );
 
-        // 条件响应逻辑：
-        // 1. 如果请求者是 Bz8byUe5bFKcQZWMdU1NQZuJ2GAN3vZvzkahcynXQi5S，只给槽99
-        // 2. 如果请求者是其他人，只给槽98
+        // Conditional response logic:
+        // 1. If requester is Bz8byUe5bFKcQZWMdU1NQZuJ2GAN3vZvzkahcynXQi5S, only give slot 99
+        // 2. If requester is anyone else, only give slot 98
         let response_slot = if sender_pubkey == special_requester {
-            info!("🔐 特殊请求者，返回槽99的数据");
+            info!("🔐 Special requester, returning slot 99 data");
             99
         } else {
-            info!("🔒 普通请求者，返回槽98的数据");
+            info!("🔒 Normal requester, returning slot 98 data");
             98
         };
 
-        // 只有当请求的槽与我们决定返回的槽匹配时才响应
+        // Only respond when requested slot matches the slot we decided to return
         if requested_slot != response_slot {
             info!(
-                "❌ 槽不匹配：请求槽={}, 响应槽={}, 拒绝响应",
+                "❌ Slot mismatch: requested_slot={}, response_slot={}, rejecting response",
                 requested_slot, response_slot
             );
             return None;
         }
 
-        // 使用响应槽来查找shred
+        // Use response slot to find shred
         let packet = repair_response::repair_response_packet(
             blockstore,
             response_slot,
@@ -1423,7 +1438,7 @@ impl ServeRepair {
         )?;
 
         info!(
-            "✅ 条件repair响应成功: 槽{} shred_index={} 给请求者={}",
+            "✅ Conditional repair response successful: slot {} shred_index={} to requester={}",
             response_slot, shred_index, sender_pubkey
         );
 

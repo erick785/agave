@@ -89,26 +89,26 @@ use {
     },
 };
 
-// 分叉攻击者的pubkey - 只有指定的节点才会执行分叉攻击
+// Fork attacker's pubkey - only specified nodes will execute fork attacks
 static FORK_ATTACKER_PUBKEY: Mutex<Option<Pubkey>> = Mutex::new(None);
 
-/// 设置分叉攻击者的pubkey
+/// Set the fork attacker's pubkey
 pub fn set_fork_attacker(attacker_pubkey: Pubkey) {
     let mut attacker = FORK_ATTACKER_PUBKEY.lock().unwrap();
     *attacker = Some(attacker_pubkey);
-    info!("🎯 设置分叉攻击者: {}", attacker_pubkey);
+    info!("🎯 Set fork attacker: {}", attacker_pubkey);
 }
 
-/// 清除分叉攻击者设置
+/// Clear fork attacker settings
 pub fn clear_fork_attacker() {
     let mut attacker = FORK_ATTACKER_PUBKEY.lock().unwrap();
     if let Some(prev_attacker) = *attacker {
-        info!("🛡️ 清除分叉攻击者: {}", prev_attacker);
+        info!("🛡️ Cleared fork attacker: {}", prev_attacker);
     }
     *attacker = None;
 }
 
-/// 检查指定节点是否为分叉攻击者
+/// Check if specified node is a fork attacker
 pub fn is_fork_attacker(pubkey: &Pubkey) -> bool {
     let attacker = FORK_ATTACKER_PUBKEY.lock().unwrap();
     if let Some(attacker_pubkey) = *attacker {
@@ -118,7 +118,7 @@ pub fn is_fork_attacker(pubkey: &Pubkey) -> bool {
     }
 }
 
-/// 获取当前设置的分叉攻击者pubkey
+/// Get currently set fork attacker pubkey
 pub fn get_fork_attacker() -> Option<Pubkey> {
     let attacker = FORK_ATTACKER_PUBKEY.lock().unwrap();
     *attacker
@@ -127,8 +127,8 @@ pub fn get_fork_attacker() -> Option<Pubkey> {
 pub const MAX_ENTRY_RECV_PER_ITER: usize = 512;
 pub const SUPERMINORITY_THRESHOLD: f64 = 1f64 / 3f64;
 pub const MAX_UNCONFIRMED_SLOTS: usize = 5;
-pub const DUPLICATE_LIVENESS_THRESHOLD: f64 = 0.1; // // 10% - 重复活跃度阈值  
-pub const DUPLICATE_THRESHOLD: f64 = 1.0 - SWITCH_FORK_THRESHOLD - DUPLICATE_LIVENESS_THRESHOLD;  // 52% - 重复确认阈值
+pub const DUPLICATE_LIVENESS_THRESHOLD: f64 = 0.1; // // 10% - Duplicate liveness threshold
+pub const DUPLICATE_THRESHOLD: f64 = 1.0 - SWITCH_FORK_THRESHOLD - DUPLICATE_LIVENESS_THRESHOLD;  // 52% - Duplicate confirmation threshold
 
 const MAX_VOTE_SIGNATURES: usize = 200;
 const MAX_VOTE_REFRESH_INTERVAL_MILLIS: usize = 5000;
@@ -2052,43 +2052,43 @@ impl ReplayStage {
         current_leader.replace(new_leader.to_owned());
     }
 
-    /// 判断是否应该对给定的slot执行分叉攻击
-    /// 分叉攻击：第4个连续领导者slot使用slot-2作为父slot而不是slot-1
+    /// Determine if fork attack should be performed for given slot
+    /// Fork attack: 4th consecutive leader slot uses slot-2 as parent instead of slot-1
     fn should_perform_fork_attack(
         poh_slot: Slot,
         parent_slot: Slot,
         my_pubkey: &Pubkey,
         _leader_schedule_cache: &Arc<LeaderScheduleCache>,
     ) -> bool {
-        // 首先检查当前节点是否为设置的分叉攻击者
+        // First check if current node is the set fork attacker
         if !is_fork_attacker(my_pubkey) {
             return false;
         }
 
-        // 检查当前节点是否是多个连续slot的领导者
-        // 我们想要在第4个连续领导者slot时进行攻击
+        // Check if current node is the leader for multiple consecutive slots
+        // We want to attack on the 4th consecutive leader slot
 
-        // 获取父bank来检查领导者调度
-        // 目前使用简单的启发式方法：如果parent_slot == poh_slot - 1，
-        // 我们检查这是否可能是序列中的第4个
+        // Get parent bank to check leader schedule
+        // Currently using simple heuristic: if parent_slot == poh_slot - 1,
+        // we check if this is potentially the 4th in sequence
 
         if parent_slot != poh_slot - 1 {
-            return false; // 不是连续的，跳过攻击
+            return false; // Not consecutive, skip attack
         }
 
-        // 检查我们是否是最后4个slot（包括当前slot）的领导者
+        // Check if we are the leader for the last 4 slots (including current slot)
         let _slots_to_check = [poh_slot - 3, poh_slot - 2, poh_slot - 1, poh_slot];
 
-        // 为了简化，我们在以下情况下执行攻击：
-        // 1. 这是连续序列中的第4个slot
-        // 2. slot号 mod 4 == 3（0索引，所以是第4个slot）
-        // 这是一个简化的检查 - 实际中您可能需要更复杂的逻辑
+        // For simplification, we execute attack when:
+        // 1. This is the 4th slot in consecutive sequence
+        // 2. slot number mod 4 == 3 (0-indexed, so 4th slot)
+        // This is a simplified check - in practice you may need more complex logic
 
         let is_fourth_consecutive = (poh_slot % 4) == 3;
 
         if is_fourth_consecutive {
             info!(
-                "分叉攻击触发：检测到第4个连续领导者slot {} 对于攻击者节点 {}",
+                "Fork attack triggered: detected 4th consecutive leader slot {} for attacker node {}",
                 poh_slot, my_pubkey
             );
             return true;
@@ -2097,15 +2097,15 @@ impl ReplayStage {
         false
     }
 
-    /// 返回分叉攻击的目标父slot
-    /// 对于第4个连续slot，我们使用slot-2而不是slot-1作为父slot
+    /// Return fork attack target parent slot
+    /// For 4th consecutive slot, we use slot-2 instead of slot-1 as parent slot
     fn get_fork_attack_parent_slot(_poh_slot: Slot, current_parent_slot: Slot) -> Slot {
-        // 当前父slot是slot-1，我们想要slot-2作为父slot
-        // 所以我们再往回一个slot
+        // Current parent slot is slot-1, we want slot-2 as parent slot
+        // So we go back one more slot
         if current_parent_slot > 0 {
             current_parent_slot - 1
         } else {
-            current_parent_slot // 防止下溢的后备方案
+            current_parent_slot // Fallback to prevent underflow
         }
     }
 
@@ -2192,7 +2192,7 @@ impl ReplayStage {
 
         assert!(!poh_recorder.read().unwrap().has_bank());
 
-        // 先检查是否需要执行分叉攻击
+        // First check if fork attack should be performed
         let mut attack_parent_slot = None;
         let mut original_parent_slot = None;
         let initial_status = poh_recorder.read().unwrap().reached_leader_slot(my_pubkey);
@@ -2211,12 +2211,12 @@ impl ReplayStage {
             ) {
                 let target_parent_slot = Self::get_fork_attack_parent_slot(poh_slot, parent_slot);
 
-                // 检查攻击目标父slot是否存在于bank_forks中
+                // Check if attack target parent slot exists in bank_forks
                 if let Some(target_parent_bank) = bank_forks.read().unwrap().get(target_parent_slot)
                 {
                     let current_parent_bank = bank_forks.read().unwrap().get(parent_slot).unwrap();
                     info!(
-                        "🎯 分叉攻击准备：slot {} 将使用父slot {} 代替 {} (跳过slot {}) - 目标父hash: {}, 当前父hash: {}",
+                        "🎯 Fork attack preparation: slot {} will use parent slot {} instead of {} (skipping slot {}) - target parent hash: {}, current parent hash: {}",
                         poh_slot, target_parent_slot, parent_slot, parent_slot,
                         target_parent_bank.hash(),
                         current_parent_bank.hash()
@@ -2224,14 +2224,14 @@ impl ReplayStage {
                     attack_parent_slot = Some(target_parent_slot);
                 } else {
                     warn!(
-                        "❌ 分叉攻击失败：无法对slot {} 执行分叉攻击，目标父slot {} 未找到",
+                        "❌ Fork attack failed: unable to execute fork attack for slot {}, target parent slot {} not found",
                         poh_slot, target_parent_slot
                     );
                 }
             }
         }
 
-        // 使用修改后的PoH recorder函数获取领导者slot状态
+        // Use modified PoH recorder function to get leader slot status
         let (poh_slot, parent_slot) = match poh_recorder
             .read()
             .unwrap()
@@ -2249,26 +2249,26 @@ impl ReplayStage {
 
         info!("{} reached_leader_slot - poh_slot: {}, parent_slot: {}, has_new_vote_been_rooted: {}", my_pubkey, poh_slot, parent_slot, has_new_vote_been_rooted);
 
-        // 检查parent_slot是否在bank_forks中
+        // Check if parent_slot exists in bank_forks
         let Some(parent) = bank_forks.read().unwrap().get(parent_slot) else {
             info!(
-                "🚫 maybe_start_leader返回false原因: {} parent slot {parent_slot} is missing from bank_forks. This \
+                "🚫 maybe_start_leader returns false reason: {} parent slot {parent_slot} is missing from bank_forks. This \
                  indicates that we are in the middle of a dump and repair. Unable to start leader", my_pubkey
             );
             return false;
         };
 
-        // 检查parent_slot是否冻结
+        // Check if parent_slot is frozen
         assert!(parent.is_frozen());
 
-        // 检查parent_slot是否完成启动验证
+        // Check if parent_slot completed startup verification
         if !parent.is_startup_verification_complete() {
-            info!("🚫 maybe_start_leader返回false原因: {} startup verification incomplete for parent slot {}, so skipping my leader slot {}", my_pubkey, parent_slot, poh_slot);
+            info!("🚫 maybe_start_leader returns false reason: {} startup verification incomplete for parent slot {}, so skipping my leader slot {}", my_pubkey, parent_slot, poh_slot);
             return false;
         }
 
         if bank_forks.read().unwrap().get(poh_slot).is_some() {
-            info!("🚫 maybe_start_leader返回false原因: {} already have bank in forks at {}?", my_pubkey, poh_slot);
+            info!("🚫 maybe_start_leader returns false reason: {} already have bank in forks at {}?", my_pubkey, poh_slot);
             return false;
         }
         info!(
@@ -2278,7 +2278,7 @@ impl ReplayStage {
 
         if let Some(next_leader) = leader_schedule_cache.slot_leader_at(poh_slot, Some(&parent)) {
             if !has_new_vote_been_rooted {
-                info!("🚫 maybe_start_leader返回false原因: {} Haven't landed a vote, so skipping my leader slot {} (parent_slot: {})", my_pubkey, poh_slot, parent_slot);
+                info!("🚫 maybe_start_leader returns false reason: {} Haven't landed a vote, so skipping my leader slot {} (parent_slot: {})", my_pubkey, poh_slot, parent_slot);
                 return false;
             }
 
@@ -2289,7 +2289,7 @@ impl ReplayStage {
 
             // I guess I missed my slot
             if next_leader != *my_pubkey {
-                info!("🚫 maybe_start_leader返回false原因: {} I missed my slot, next_leader is {} for poh_slot {} (parent_slot: {})", my_pubkey, next_leader, poh_slot, parent_slot);
+                info!("🚫 maybe_start_leader returns false reason: {} I missed my slot, next_leader is {} for poh_slot {} (parent_slot: {})", my_pubkey, next_leader, poh_slot, parent_slot);
                 return false;
             }
 
@@ -2307,7 +2307,7 @@ impl ReplayStage {
                          progress map",
                     );
                 info!(
-                    "🚫 maybe_start_leader返回false原因: {} Propagation check failed for poh_slot {} parent_slot {}, latest_unconfirmed_leader_slot: {}",
+                    "🚫 maybe_start_leader returns false reason: {} Propagation check failed for poh_slot {} parent_slot {}, latest_unconfirmed_leader_slot: {}",
                     my_pubkey, poh_slot, parent_slot, latest_unconfirmed_leader_slot
                 );
                 if poh_slot != skipped_slots_info.last_skipped_slot {
@@ -2338,7 +2338,7 @@ impl ReplayStage {
             let root_slot = bank_forks.read().unwrap().root();
             datapoint_info!("replay_stage-my_leader_slot", ("slot", poh_slot, i64),);
             info!(
-                "✅ maybe_start_leader通过所有检查: {} 准备创建Bank - new fork:{} parent:{} (leader) root:{} - 父Bank信息: slot={}, hash={}, last_blockhash={}",
+                "✅ maybe_start_leader passed all checks: {} preparing to create Bank - new fork:{} parent:{} (leader) root:{} - parent Bank info: slot={}, hash={}, last_blockhash={}",
                 my_pubkey, poh_slot, parent_slot, root_slot, parent.slot(), parent.hash(), parent.last_blockhash()
             );
 
@@ -2350,11 +2350,11 @@ impl ReplayStage {
                 false
             };
 
-            // 如果执行了分叉攻击，记录详细信息
+            // If fork attack was executed, log detailed information
             if attack_parent_slot.is_some() {
                 let orig_parent = original_parent_slot.unwrap_or(parent.slot());
                 info!(
-                    "🔥 分叉攻击执行：创建slot {} 使用父slot {} (正常应为 {}) - 父hash={}, last_blockhash={}",
+                    "🔥 Fork attack execution: creating slot {} using parent slot {} (normally would be {}) - parent hash={}, last_blockhash={}",
                     poh_slot,
                     parent.slot(),
                     orig_parent,
@@ -2373,27 +2373,27 @@ impl ReplayStage {
                 NewBankOptions { vote_only_bank },
             );
             
-            // 记录新创建bank的信息
+            // Log newly created bank information
             info!(
-                "✅ 新Bank创建完成 - slot: {}, hash: {}, last_blockhash: {}, parent_hash: {}",
+                "✅ New Bank creation complete - slot: {}, hash: {}, last_blockhash: {}, parent_hash: {}",
                 tpu_bank.slot(),
                 tpu_bank.hash(),
                 tpu_bank.last_blockhash(),
                 tpu_bank.parent_hash()
             );
             
-            // 如果执行了分叉攻击，需要重置PoH状态以匹配新的父slot
+            // If fork attack was executed, need to reset PoH state to match new parent slot
             if attack_parent_slot.is_some() {
                 let reset_bank = parent.clone();
                 info!(
-                    "🔄 分叉攻击：重置PoH状态到攻击目标父Bank - slot: {}, hash: {}, last_blockhash: {}",
+                    "🔄 Fork attack: resetting PoH state to attack target parent Bank - slot: {}, hash: {}, last_blockhash: {}",
                     reset_bank.slot(),
                     reset_bank.hash(), 
                     reset_bank.last_blockhash()
                 );
                 
-                // 重置PoH以匹配攻击目标父slot的状态
-                // 这确保Entry验证时使用正确的start_hash
+                // Reset PoH to match attack target parent slot state
+                // This ensures Entry validation uses correct start_hash
                 poh_recorder.write().unwrap().reset_poh_for_fork_attack(reset_bank);
             }
             
@@ -2598,10 +2598,10 @@ impl ReplayStage {
         }
         trace!("handle votable bank {}", bank.slot());
         
-        // 为特定槽范围添加投票日志
+        // Add voting logs for specific slot range
         if bank.slot() >= 96 && bank.slot() <= 103 {
             info!(
-                "🗳️  节点投票: slot={}, parent={}, 节点ID={}[..8], 时间戳={}ms",
+                "🗳️  Node voting: slot={}, parent={}, node_ID={}[..8], timestamp={}ms",
                 bank.slot(),
                 bank.parent_slot(),
                 identity_keypair.pubkey().to_string()[..8].to_string(),

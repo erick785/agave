@@ -520,8 +520,8 @@ impl PohRecorder {
         self.start_tick_height = self.tick_height + 1;
     }
 
-    /// 专门用于分叉攻击的PoH重置方法
-    /// 重置PoH状态以匹配攻击目标父Bank，确保Entry哈希链的一致性
+    /// PoH reset method specifically for fork attacks
+    /// Resets PoH state to match attack target parent Bank, ensuring Entry hash chain consistency
     pub fn reset_poh_for_fork_attack(&mut self, attack_parent_bank: Arc<Bank>) {
         let blockhash = attack_parent_bank.last_blockhash();
         let old_poh_hash = {
@@ -532,26 +532,26 @@ impl PohRecorder {
         };
         
         info!(
-            "🔄 分叉攻击PoH重置：从 {} 重置到攻击目标父Bank {} (slot: {}, blockhash: {})",
+            "🔄 Fork attack PoH reset: resetting from {} to attack target parent Bank {} (slot: {}, blockhash: {})",
             old_poh_hash,
             attack_parent_bank.hash(),
             attack_parent_bank.slot(),
             blockhash
         );
 
-        // 清空tick缓存，因为之前的ticks可能基于错误的PoH状态
+        // Clear tick cache as previous ticks may be based on incorrect PoH state
         self.tick_cache = vec![];
         
-        // 更新start_bank为攻击目标父Bank
+        // Update start_bank to attack target parent Bank
         self.start_bank = attack_parent_bank.clone();
         self.start_bank_active_descendants = vec![];
         
-        // 重新计算tick_height以匹配新的start_bank
+        // Recalculate tick_height to match new start_bank
         self.tick_height = (self.start_slot() + 1) * self.ticks_per_slot;
         self.start_tick_height = self.tick_height + 1;
         
         info!(
-            "🎯 分叉攻击PoH重置完成：新的start_slot={}, tick_height={}, start_tick_height={}",
+            "🎯 Fork attack PoH reset complete: new start_slot={}, tick_height={}, start_tick_height={}",
             self.start_slot(),
             self.tick_height,
             self.start_tick_height
@@ -707,8 +707,8 @@ impl PohRecorder {
         self.reached_leader_slot_with_parent(my_pubkey, None)
     }
 
-    /// 返回是否已到达领导者slot，可以手动指定父slot用于分叉攻击
-    /// 如果指定了override_parent_slot，将使用该slot作为父slot而不是默认的start_slot
+    /// Returns whether leader slot has been reached, can manually specify parent slot for fork attack
+    /// If override_parent_slot is specified, will use that slot as parent slot instead of default start_slot
     pub fn reached_leader_slot_with_parent(
         &self,
         my_pubkey: &Pubkey,
@@ -748,18 +748,18 @@ impl PohRecorder {
         }
 
         let poh_slot = current_poh_slot;
-        // 使用手动指定的父slot（用于分叉攻击）或默认的start_slot
+        // Use manually specified parent slot (for fork attack) or default start_slot
         let parent_slot = override_parent_slot.unwrap_or_else(|| self.start_slot());
         
-        if let Some(override_slot) = override_parent_slot {
+        if let Some(_override_slot) = override_parent_slot {
             info!(
-                "🎯 分叉攻击：PoH记录器使用手动指定的父slot {} 代替默认的 {} 对于slot {} - 需要重置PoH状态",
+                "🎯 Fork attack: PoH recorder using manually specified parent slot {} instead of default {} for slot {} - PoH state reset needed",
                 parent_slot, self.start_slot(), poh_slot
             );
             
-            // 分叉攻击时，我们需要重置PoH状态以匹配攻击目标父slot
-            // 这确保了Entry的哈希链与修改后的Bank父子关系一致
-            // 注意：这里我们只记录需要重置，实际重置会在maybe_start_leader中完成
+            // During fork attack, we need to reset PoH state to match attack target parent slot
+            // This ensures Entry hash chain is consistent with modified Bank parent-child relationship
+            // Note: Here we only log the need to reset, actual reset will be completed in maybe_start_leader
         }
         
         PohLeaderStatus::Reached {
@@ -791,20 +791,20 @@ impl PohRecorder {
     }
 
     fn can_skip_grace_ticks(&self, my_pubkey: &Pubkey, next_leader_slot: Slot) -> bool {
-        // 检查是否有分叉攻击策略
+        // Check if there is a fork attack strategy
         if let Ok(strategy) = std::env::var("SOLANA_FORKING_STRATEGY") {
             if let Ok(target_slot_str) = std::env::var("SOLANA_FORK_TARGET_SLOT") {
                 if let Ok(target_slot) = target_slot_str.parse::<Slot>() {
-                    // 如果当前处于分叉攻击期间，根据策略决定是否跳过grace ticks
+                    // If currently during fork attack, decide whether to skip grace ticks based on strategy
                     if next_leader_slot >= target_slot {
                         match strategy.as_str() {
                             "abstain" => {
-                                // 放弃策略：延长grace ticks以避免出块
+                                // Abstain strategy: extend grace ticks to avoid producing blocks
                                 info!("Forking attack: abstain strategy, extending grace ticks for slot {}", next_leader_slot);
                                 return false;
                             }
                             "vote_n1" | "vote_n2" => {
-                                // 有针对性投票策略：缩短grace ticks以快速出块
+                                // Targeted voting strategy: shorten grace ticks to produce blocks quickly
                                 info!("Forking attack: targeted voting strategy for slot {}", next_leader_slot);
                                 return true;
                             }
@@ -927,26 +927,26 @@ impl PohRecorder {
                 let last_tick_height = (last_slot + 1) * ticks_per_slot;
                 let num_slots = last_slot - first_slot + 1;
                 
-                // 检查分叉攻击策略，调整grace ticks
+                // Check fork attack strategy, adjust grace ticks
                 let mut grace_ticks = cmp::min(
                     ticks_per_slot * MAX_GRACE_SLOTS,
                     ticks_per_slot * num_slots / GRACE_TICKS_FACTOR,
                 );
 
-                // 根据分叉策略调整grace ticks
+                // Adjust grace ticks based on fork strategy
                 if let Ok(strategy) = std::env::var("SOLANA_FORKING_STRATEGY") {
                     if let Ok(target_slot_str) = std::env::var("SOLANA_FORK_TARGET_SLOT") {
                         if let Ok(target_slot) = target_slot_str.parse::<u64>() {
                             if first_slot >= target_slot {
                                 match strategy.as_str() {
                                     "abstain" => {
-                                        // 放弃策略：大幅增加grace ticks以延迟出块
+                                        // Abstain strategy: significantly increase grace ticks to delay block production
                                         grace_ticks = ticks_per_slot * MAX_GRACE_SLOTS * 2;
                                         info!("Forking attack: abstain strategy, extending grace ticks to {} for slots {}-{}", 
                                               grace_ticks, first_slot, last_slot);
                                     }
                                     "vote_n1" | "vote_n2" => {
-                                        // 针对性投票策略：减少grace ticks以快速出块
+                                        // Targeted voting strategy: reduce grace ticks to produce blocks quickly
                                         grace_ticks = cmp::max(1, grace_ticks / 2);
                                         info!("Forking attack: targeted voting strategy, reducing grace ticks to {} for slots {}-{}", 
                                               grace_ticks, first_slot, last_slot);

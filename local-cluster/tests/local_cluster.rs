@@ -5969,32 +5969,32 @@ fn test_invalid_forks_persisted_on_restart() {
 #[serial]
 fn test_fork_attack_with_modified_leader_logic() {
     pub const RUST_LOG_FILTER_TEST: &str =
-    "error,solana_turbine::broadcast_stage::broadcast_dual_slot_run=info,solana_turbine::broadcast_stage=debug,solana_core::replay_stage=info,solana_core::window_service=info,solana_core::repair_service=info,solana_core::serve_repair=info,solana_local_cluster=info,local_cluster=info,solana_ledger::blockstore_processor=warn,solana_entry=warn";
+    "error,solana_turbine::broadcast_stage::broadcast_dual_slot_run=info,solana_core::replay_stage=info,solana_local_cluster=info,local_cluster=info,solana_ledger::blockstore_processor=warn,solana_entry=warn";
+    //"error,solana_turbine::broadcast_stage::broadcast_dual_slot_run=info,solana_turbine::broadcast_stage=debug,solana_core::replay_stage=info,solana_core::window_service=info,solana_core::repair_service=info,solana_core::serve_repair=info,solana_local_cluster=info,local_cluster=info,solana_ledger::blockstore_processor=warn,solana_entry=warn";
     //"error,solana_turbine::broadcast_stage::broadcast_dual_slot_run=info,solana_turbine::broadcast_stage=debug,solana_core::replay_stage=info,solana_core::window_service=info,solana_core::repair::repair_service=info,solana_core::repair::serve_repair=info,solana_core::repair::repair_weight=info,solana_ledger::blockstore=info,solana_ledger::blockstore_meta=info,solana_local_cluster=info,local_cluster=info,solana_ledger::blockstore_processor=warn,solana_entry=warn";
     solana_logger::setup_with_default(RUST_LOG_FILTER_TEST);
 
-    info!("🚀 开始分叉攻击测试：测试修改后的领导者逻辑");
+    info!("🚀 Starting fork attack test: Testing modified leader logic");
 
     let total_stake = 1000;
     let attacker_stake = 320; // 32%
-                              // A组
-    let normal_node_b_stake = 340; // 17%
-
-    // B组
-    let normal_node_c_stake = 110; // 17%
-    let normal_node_d_stake = 110; // 17%
-    let normal_node_e_stake = 120; // 17%
+                              // Group A
+    let normal_node_b_stake = 340; // 34%
+                                   // Group B
+    let normal_node_c_stake = 110; // 11%
+    let normal_node_d_stake = 110; // 11%
+    let normal_node_e_stake = 120; // 12%
 
     let node_stakes = vec![
-        attacker_stake,      // 攻击者节点
-        normal_node_b_stake, // 正常节点B
-        normal_node_c_stake, // 正常节点C
-        normal_node_d_stake, // 正常节点D
-        normal_node_e_stake, // 正常节点E
+        attacker_stake,      // Attacker node
+        normal_node_b_stake, // Normal node B
+        normal_node_c_stake, // Normal node C
+        normal_node_d_stake, // Normal node D
+        normal_node_e_stake, // Normal node E
     ];
 
     info!(
-        "网络质押分布：攻击者{}%，节点B {}%，节点C {}%，节点D {}%，节点E {}%",
+        "Network stake distribution: Attacker {}%, Node B {}%, Node C {}%, Node D {}%, Node E {}%",
         (attacker_stake * 100) / total_stake,
         (normal_node_b_stake * 100) / total_stake,
         (normal_node_c_stake * 100) / total_stake,
@@ -6002,20 +6002,14 @@ fn test_fork_attack_with_modified_leader_logic() {
         (normal_node_e_stake * 100) / total_stake,
     );
 
-    // 使用已知有效的密钥对，第三个节点使用新生成的密钥对
+    // Using known valid keypairs, third node uses newly generated keypair
     let validator_keypairs = vec![
-    (Arc::new(Keypair::from_base58_string("28bN3xyvrP4E8LwEgtLjhnkb7cY4amQb6DrYAbAYjgRV4GAGgkVM2K7wnxnAS7WDneuavza7x21MiafLu1HkwQt4")), true), // 攻击者
-    (Arc::new(Keypair::from_base58_string("2saHBBoTkLMmttmPQP8KfBkcCw45S5cwtV3wTdGCscRC8uxdgvHxpHiWXKx4LvJjNJtnNcbSv5NdheokFFqnNDt8")), true), // 节点B
-    (Arc::new(Keypair::from_base58_string("4mx9yoFBeYasDKBGDWCTWGJdWuJCKbgqmuP8bN9umybCh5Jzngw7KQxe99Rf5uzfyzgba1i65rJW4Wqk7Ab5S8ye")), true), // 节点C 
-    (Arc::new(Keypair::from_base58_string("2XFPyuzPuXMsPnkH98UNcQpfA7M4b2TUhRxcWEoWjy4M6ojQ7HGJSvotktEVbaq49Qxt16wUjdqvSJc6ecbFfZwj")), true), // 节点D 
-    (Arc::new(Keypair::from_base58_string("5U4JFmHa9g5TQxuJtKHZyW9LKSLTRmCppFVpxUaDdz76MVUJygTGD55n1hKJ2wGb8ugPCKTmAGucApxUFh4VBQmE")), true), // 节点A
+    (Arc::new(Keypair::from_base58_string("28bN3xyvrP4E8LwEgtLjhnkb7cY4amQb6DrYAbAYjgRV4GAGgkVM2K7wnxnAS7WDneuavza7x21MiafLu1HkwQt4")), true), // Attacker
+    (Arc::new(Keypair::from_base58_string("2saHBBoTkLMmttmPQP8KfBkcCw45S5cwtV3wTdGCscRC8uxdgvHxpHiWXKx4LvJjNJtnNcbSv5NdheokFFqnNDt8")), true), // Node B
+    (Arc::new(Keypair::from_base58_string("4mx9yoFBeYasDKBGDWCTWGJdWuJCKbgqmuP8bN9umybCh5Jzngw7KQxe99Rf5uzfyzgba1i65rJW4Wqk7Ab5S8ye")), true), // Node C 
+    (Arc::new(Keypair::from_base58_string("2XFPyuzPuXMsPnkH98UNcQpfA7M4b2TUhRxcWEoWjy4M6ojQ7HGJSvotktEVbaq49Qxt16wUjdqvSJc6ecbFfZwj")), true), // Node D 
+    (Arc::new(Keypair::from_base58_string("5U4JFmHa9g5TQxuJtKHZyW9LKSLTRmCppFVpxUaDdz76MVUJygTGD55n1hKJ2wGb8ugPCKTmAGucApxUFh4VBQmE")), true), // Node E
 ];
-
-    //节点A key AqEWUK8pdsfY2CTrBQLGS8w8ndMeuFcDpCkFwWaicaLL vote_key FKa3LXwxcRGxLb8VbRcVciacL3J4VHWKTEqb4amVpykD
-    //节点B key Bz8byUe5bFKcQZWMdU1NQZuJ2GAN3vZvzkahcynXQi5S vote_key 4R1xjh5tvK3vLzpMrfpxkSDKMB2k51DqFALynkU42CGJ
-    //节点C key CsSuUpFWedE7fQAa61TA2NZ2442dJkYhh1Hj4MSKWqz8 vote_key 7FB51SRKHepjLWgjEXw8NXV566kwpVqg1ELHKbC5M88k
-    //节点D key DyKQi4vsqymCdttr83EssuNT23i5edRtEh6aiV6sJwFB
-    //节点E key EoSpaCkHsw9okTWy5GSYfSuFE4XB4YrSuDupnm1y9ZpC
 
     let validator_pubkeys: Vec<Pubkey> = validator_keypairs
         .iter()
@@ -6031,15 +6025,15 @@ fn test_fork_attack_with_modified_leader_logic() {
     );
 
     info!(
-        "节点标识：攻击者={}, 节点B={}, 节点C={}, 节点D={}, 节点E={}",
+        "Node identifiers: Attacker={}, Node B={}, Node C={}, Node D={}, Node E={}",
         attacker_id, node_b_id, node_c_id, node_d_id, node_e_id
     );
 
-    // 为攻击者节点配置双槽广播
-    let (dual_slot_sender, dual_slot_receiver) = unbounded();
+    // Configure dual slot broadcast for attacker node
+    let (dual_slot_sender, _dual_slot_receiver) = unbounded();
 
-    // 配置双槽广播：节点B为一组，节点C和D为另一组
-    // 简化版本：只缓存槽3和槽4，然后以不同顺序发送给两组
+    // Configure dual slot broadcast: Node B as one group, Nodes C and D as another group
+    // Simplified version: only cache slot 3 and slot 4, then send in different order to two groups
     let dual_slot_config = BroadcastDualSlotConfig {
         partition: DualSlotPartition::GroupPubkeys {
             group_a: vec![node_b_id],
@@ -6051,21 +6045,21 @@ fn test_fork_attack_with_modified_leader_logic() {
     let mut attacker_config = ValidatorConfig::default_for_test();
     attacker_config.broadcast_stage_type = BroadcastStageType::BroadcastDualSlot(dual_slot_config);
 
-    // 为其他节点配置
+    // Configure for other nodes
     let normal_config_b = ValidatorConfig::default_for_test();
     let normal_config_c = ValidatorConfig::default_for_test();
     let normal_config_d = ValidatorConfig::default_for_test();
     let normal_config_e = ValidatorConfig::default_for_test();
 
     let validator_configs = vec![
-        attacker_config, // 攻击者
-        normal_config_b, // 节点B
-        normal_config_c, // 节点C
-        normal_config_d, // 节点D
-        normal_config_e, // 节点E
+        attacker_config, // Attacker
+        normal_config_b, // Node B
+        normal_config_c, // Node C
+        normal_config_d, // Node D
+        normal_config_e, // Node E
     ];
 
-    info!("创建4节点集群...");
+    info!("Creating 4-node cluster...");
 
     let cluster = LocalCluster::new(
         &mut ClusterConfig {
@@ -6079,66 +6073,66 @@ fn test_fork_attack_with_modified_leader_logic() {
         SocketAddrSpace::Unspecified,
     );
 
-    info!("✅ 集群已创建，等待网络稳定...");
+    info!("✅ Cluster created, waiting for network stabilization...");
 
-    // 等待网络启动并稳定（此时分叉攻击功能还未启用）
+    // Wait for network startup and stabilization (fork attack feature not yet enabled)
     let stabilization_time = Duration::from_secs(30);
     sleep(stabilization_time);
 
-    info!("🕒 网络稳定化完成，现在启用分叉攻击功能...");
+    info!("🕒 Network stabilization complete, now enabling fork attack functionality...");
 
-    // 设置攻击者节点 - 只有攻击者节点会执行分叉攻击
+    // Set attacker node - only the attacker node will execute fork attack
     solana_core::replay_stage::set_fork_attacker(attacker_id);
 
-    // 设置环境变量让攻击者停止投票
+    // Set environment variable to make attacker stop voting
     std::env::set_var("SOLANA_FORK_TARGET_SLOT", "96");
 
     std::env::set_var("SOLANA_FORKING_STRATEGY", "abstain");
 
-    // 获取各节点的ledger路径用于监控
+    // Get ledger paths for each node for monitoring
     let attacker_ledger_path = cluster.ledger_path(&attacker_id);
     let node_b_ledger_path = cluster.ledger_path(&node_b_id);
     let node_c_ledger_path = cluster.ledger_path(&node_c_id);
     let node_d_ledger_path = cluster.ledger_path(&node_d_id);
     let node_e_ledger_path = cluster.ledger_path(&node_e_id);
-    // 记录攻击前的状态
+    // Record state before attack
     let initial_attacker_root = root_in_tower(&attacker_ledger_path, &attacker_id);
     let initial_node_b_root = root_in_tower(&node_b_ledger_path, &node_b_id);
     let initial_node_c_root = root_in_tower(&node_c_ledger_path, &node_c_id);
     let initial_node_d_root = root_in_tower(&node_d_ledger_path, &node_d_id);
     let initial_node_e_root = root_in_tower(&node_e_ledger_path, &node_e_id);
     info!(
-        "攻击前状态 - 攻击者root: {:?}, 节点B root: {:?}, 节点C root: {:?}, 节点D root: {:?}, 节点E root: {:?}",
+        "Pre-attack state - Attacker root: {:?}, Node B root: {:?}, Node C root: {:?}, Node D root: {:?}, Node E root: {:?}",
         initial_attacker_root, initial_node_b_root, initial_node_c_root, initial_node_d_root, initial_node_e_root
     );
 
     info!(
-        "攻击前状态 - 攻击者root: {:?}, 节点B root: {:?}, 节点C root: {:?}, 节点D root: {:?}, 节点E root: {:?}",
+        "Pre-attack state - Attacker root: {:?}, Node B root: {:?}, Node C root: {:?}, Node D root: {:?}, Node E root: {:?}",
         initial_attacker_root, initial_node_b_root, initial_node_c_root, initial_node_d_root, initial_node_e_root
     );
 
-    // 监控分叉攻击的发生
-    info!("🎯 开始监控分叉攻击执行...");
+    // Monitor fork attack execution
+    info!("🎯 Starting to monitor fork attack execution...");
 
-    let attack_monitoring_time = Duration::from_secs(40); // 监控40秒
+    let attack_monitoring_time = Duration::from_secs(40); // Monitor for 40 seconds
     let mut fork_attack_detected = false;
     let start_time = Instant::now();
 
-    // 检查ledger中是否出现了我们预期的分叉模式
+    // Check if expected fork pattern appears in ledger
     while start_time.elapsed() < attack_monitoring_time {
-        // 检查攻击者是否创建了分叉
+        // Check if attacker created a fork
         if let Some(attacker_root) = root_in_tower(&attacker_ledger_path, &attacker_id) {
-            // 查看blockstore中是否有分叉的证据
+            // Check blockstore for evidence of fork
             let blockstore = open_blockstore(&attacker_ledger_path);
 
-            // 检查是否有slot跳过了正常的父子关系
+            // Check if any slot skipped normal parent-child relationship
             for slot in (attacker_root + 1)..(attacker_root + 20) {
                 if let Ok(Some(slot_meta)) = blockstore.meta(slot) {
                     if let Some(parent_slot) = slot_meta.parent_slot {
-                        // 检查是否有slot的父slot不是前一个slot（分叉攻击的特征）
+                        // Check if slot's parent is not the previous slot (fork attack characteristic)
                         if parent_slot < slot - 1 && slot % 4 == 3 {
                             info!(
-                                "🔍 检测到潜在分叉攻击：slot {} 的父slot是 {} (不是 {})",
+                                "🔍 Detected potential fork attack: slot {} has parent slot {} (not {})",
                                 slot,
                                 parent_slot,
                                 slot - 1
@@ -6158,27 +6152,27 @@ fn test_fork_attack_with_modified_leader_logic() {
     }
 
     if fork_attack_detected {
-        info!("✅ 成功检测到分叉攻击执行！");
+        info!("✅ Successfully detected fork attack execution!");
     } else {
-        info!("⚠️  在监控期间未检测到明显的分叉攻击模式");
+        info!("⚠️  No obvious fork attack pattern detected during monitoring");
     }
 
-    // 让攻击运行一段时间以观察效果
+    // Let attack run for a while to observe effects
     let attack_duration = Duration::from_secs(45);
     info!(
-        "让分叉攻击运行{}秒，观察网络共识影响...",
+        "Letting fork attack run for {} seconds, observing network consensus impact...",
         attack_duration.as_secs()
     );
     sleep(attack_duration);
 
-    // 检查攻击后的状态
+    // Check post-attack state
     let post_attack_attacker_root = root_in_tower(&attacker_ledger_path, &attacker_id);
     let post_attack_node_b_root = root_in_tower(&node_b_ledger_path, &node_b_id);
     let post_attack_node_c_root = root_in_tower(&node_c_ledger_path, &node_c_id);
     let post_attack_node_d_root = root_in_tower(&node_d_ledger_path, &node_d_id);
     let post_attack_node_e_root = root_in_tower(&node_e_ledger_path, &node_e_id);
     info!(
-        "攻击后状态 - 攻击者root: {:?}, 节点B root: {:?}, 节点C root: {:?}, 节点D root: {:?}, 节点E root: {:?}",
+        "Post-attack state - Attacker root: {:?}, Node B root: {:?}, Node C root: {:?}, Node D root: {:?}, Node E root: {:?}",
         post_attack_attacker_root,
         post_attack_node_b_root,
         post_attack_node_c_root,
@@ -6186,7 +6180,7 @@ fn test_fork_attack_with_modified_leader_logic() {
         post_attack_node_e_root
     );
 
-    // 分析攻击效果
+    // Analyze attack effects
     let attacker_progress =
         post_attack_attacker_root.unwrap_or(0) - initial_attacker_root.unwrap_or(0);
     let node_b_progress = post_attack_node_b_root.unwrap_or(0) - initial_node_b_root.unwrap_or(0);
@@ -6194,108 +6188,54 @@ fn test_fork_attack_with_modified_leader_logic() {
     let node_d_progress = post_attack_node_d_root.unwrap_or(0) - initial_node_d_root.unwrap_or(0);
     let node_e_progress = post_attack_node_e_root.unwrap_or(0) - initial_node_e_root.unwrap_or(0);
     info!(
-        "Root进展分析 - 攻击者: +{}, 节点B: +{}, 节点C: +{}, 节点D: +{}, 节点E: +{}",
+        "Root progress analysis - Attacker: +{}, Node B: +{}, Node C: +{}, Node D: +{}, Node E: +{}",
         attacker_progress, node_b_progress, node_c_progress, node_d_progress, node_e_progress
     );
 
-    // 检查是否有slot被创建（验证我们的修改是否工作）
+    // Check if slots were created (verify if our modifications work)
     let mut slots_created = false;
     if let Some(final_root) = post_attack_attacker_root {
         if final_root > initial_attacker_root.unwrap_or(0) {
             slots_created = true;
             info!(
-                "✅ 确认有新的slot被创建：从 {} 到 {}",
+                "✅ Confirmed new slots were created: from {} to {}",
                 initial_attacker_root.unwrap_or(0),
                 final_root,
             );
         }
     }
 
-    // 验证攻击是否对网络产生了影响
+    // Verify if attack affected the network
     let network_affected = {
         let total_progress = node_b_progress + node_c_progress + node_d_progress + node_e_progress;
-        let expected_normal_progress = attack_duration.as_secs() * 2; // 两个节点的预期进展
+        let expected_normal_progress = attack_duration.as_secs() * 2; // Expected progress of two nodes
 
-        // 如果总进展明显少于预期，说明攻击有效果
+        // If total progress is significantly less than expected, attack was effective
         total_progress < expected_normal_progress / 2
     };
 
     if network_affected {
-        info!("✅ 分叉攻击对网络产生了影响：正常节点进展受阻");
+        info!("✅ Fork attack affected the network: Normal node progress obstructed");
     } else {
-        info!("⚠️  网络依然稳定运行，攻击影响有限");
+        info!("⚠️  Network still running stably, attack impact limited");
     }
 
-    // 最终验证
+    // Final verification
     assert!(
         slots_created,
-        "测试失败：没有检测到新slot的创建，可能表明节点没有正常运行"
+        "Test failed: No new slot creation detected, may indicate nodes not running properly"
     );
 
     if fork_attack_detected {
-        info!("🎯 分叉攻击测试成功：检测到攻击执行且产生了slot");
+        info!("🎯 Fork attack test successful: Detected attack execution and slot generation");
     } else {
-        info!("⚠️  分叉攻击测试部分成功：创建了slot但未明确检测到分叉模式");
+        info!("⚠️  Fork attack test partially successful: Created slots but fork pattern not clearly detected");
     }
 
-    info!("🔬 分叉攻击测试完成 - 验证了修改后的maybe_start_leader函数");
+    info!("🔬 Fork attack test complete - Verified modified maybe_start_leader function");
 
-    // 测试完成后清除分叉攻击者设置和环境变量
+    // Clear fork attacker settings and environment variables after test completion
     solana_core::replay_stage::clear_fork_attacker();
     std::env::remove_var("SOLANA_FORKING_STRATEGY");
     std::env::remove_var("SOLANA_FORK_TARGET_SLOT");
-}
-
-#[test]
-fn test_generate_keypair_with_pubkey_starting_with_e() {
-    use solana_keypair::Keypair;
-    use solana_signer::Signer;
-
-    println!("🔑 开始生成公钥以'E'开头的私钥");
-
-    let mut attempts = 0;
-    let max_attempts = 1000000; // 最大尝试次数
-
-    loop {
-        attempts += 1;
-
-        // 生成新的随机私钥
-        let keypair = Keypair::new();
-        let pubkey = keypair.pubkey();
-        let pubkey_str = pubkey.to_string();
-
-        // 检查公钥是否以'E'开头
-        if pubkey_str.starts_with('E') {
-            // 获取私钥的base58字符串
-            let private_key_base58 = keypair.to_base58_string();
-
-            println!("✅ 找到符合条件的密钥对！");
-            println!("🔢 尝试次数: {}", attempts);
-            println!("🔐 私钥 (Base58): {}", private_key_base58);
-            println!("🗝️  公钥: {}", pubkey_str);
-            println!("🎯 公钥首字符: {}", pubkey_str.chars().next().unwrap());
-
-            // 验证私钥可以正确恢复公钥
-            let recovered_keypair = Keypair::from_base58_string(&private_key_base58);
-            assert_eq!(recovered_keypair.pubkey(), pubkey, "私钥恢复验证失败");
-            println!("✅ 私钥恢复验证成功");
-
-            break;
-        }
-
-        // 每10000次尝试打印一次进度
-        if attempts % 10000 == 0 {
-            println!("🔄 已尝试 {} 次，继续搜索...", attempts);
-        }
-
-        // 防止无限循环
-        if attempts >= max_attempts {
-            panic!(
-                "❌ 超过最大尝试次数 {} 仍未找到符合条件的密钥对",
-                max_attempts
-            );
-        }
-    }
-
-    info!("🎉 测试完成 - 成功生成公钥以'E'开头的密钥对");
 }

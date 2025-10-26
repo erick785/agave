@@ -399,8 +399,6 @@ fn retransmit_shred(
     quic_endpoint_sender: &AsyncSender<(SocketAddr, Bytes)>,
     stats: &RetransmitStats,
 ) -> Option<RetransmitShredOutput> {
-    // 🚫 暂时关闭retransmit功能 - 不转发任何shreds
-
     let key = shred::layout::get_shred_id(shred.as_ref())?;
     if key.slot() < root_bank.slot()
         || shred_deduper.dedup(key, shred.as_ref(), MAX_DUPLICATE_COUNT)

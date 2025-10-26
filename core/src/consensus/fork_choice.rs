@@ -17,32 +17,32 @@ use {
     },
 };
 
-// 分叉攻击策略配置
+// Fork attack strategy configuration
 #[derive(Debug, Clone, PartialEq)]
 pub enum ForkingStrategy {
-    VoteForN1, // 投票给分叉 N+1
-    VoteForN2, // 投票给分叉 N+2
-    Abstain,   // 一直放弃投票
+    VoteForN1, // Vote for fork N+1
+    VoteForN2, // Vote for fork N+2
+    Abstain,   // Always abstain from voting
 }
 
-// 检查是否需要执行分叉攻击策略
+// Check if fork attack strategy should be executed
 fn check_forking_attack_strategy(
     heaviest_bank: &Arc<Bank>,
     progress: &ProgressMap,
     tower: &Tower,
 ) -> Option<SelectVoteAndResetForkResult> {
-    // 首先检查当前节点是否为设置的分叉攻击者
+    // First check if current node is the set fork attacker
     use crate::replay_stage::get_fork_attacker;
 
     let attacker_pubkey = get_fork_attacker()?;
 
-    // 通过 tower 获取当前节点的 pubkey
+    // Get current node's pubkey through tower
     let tower_node_pubkey = tower.node_pubkey;
     if tower_node_pubkey != attacker_pubkey {
-        return None; // 不是攻击者节点，使用正常投票逻辑
+        return None; // Not attacker node, use normal voting logic
     }
 
-    // 从环境变量读取分叉策略
+    // Read forking strategy from environment variable
     let strategy = match env::var("SOLANA_FORKING_STRATEGY").ok()?.as_str() {
         "vote_n1" => ForkingStrategy::VoteForN1,
         "vote_n2" => ForkingStrategy::VoteForN2,
@@ -50,19 +50,19 @@ fn check_forking_attack_strategy(
         _ => return None,
     };
 
-    // 读取目标分叉slot
+    // Read target fork slot
     let target_slot: Slot = env::var("SOLANA_FORK_TARGET_SLOT").ok()?.parse().ok()?;
 
-    // 只在目标slot之后执行分叉策略
+    // Only execute fork strategy after target slot
     if heaviest_bank.slot() < target_slot {
         return None;
     }
 
     match strategy {
         ForkingStrategy::Abstain => {
-            // 放弃投票策略：不投票给任何分叉
+            // Abstain voting strategy: don't vote for any fork
             info!(
-                "🚫 分叉攻击者 {} 停止投票：slot {} 超过目标 slot {}",
+                "🚫 Fork attacker {} stops voting: slot {} exceeds target slot {}",
                 tower_node_pubkey,
                 heaviest_bank.slot(),
                 target_slot
@@ -74,26 +74,26 @@ fn check_forking_attack_strategy(
             })
         }
         ForkingStrategy::VoteForN1 => {
-            // 投票给 N+1 分叉的逻辑
+            // Logic for voting for N+1 fork
             select_specific_fork(heaviest_bank, progress, target_slot + 1)
         }
         ForkingStrategy::VoteForN2 => {
-            // 投票给 N+2 分叉的逻辑
+            // Logic for voting for N+2 fork
             select_specific_fork(heaviest_bank, progress, target_slot + 2)
         }
     }
 }
 
-// 选择特定分叉进行投票
+// Select specific fork to vote for
 fn select_specific_fork(
     heaviest_bank: &Arc<Bank>,
     progress: &ProgressMap,
     target_fork_slot: Slot,
 ) -> Option<SelectVoteAndResetForkResult> {
-    // 查找目标分叉
+    // Look for target fork
     if let Some(fork_stats) = progress.get_fork_stats(target_fork_slot) {
         if !fork_stats.is_locked_out {
-            // 如果目标分叉可用且未被锁定，投票给它
+            // If target fork is available and not locked out, vote for it
             return Some(SelectVoteAndResetForkResult {
                 vote_bank: Some((heaviest_bank.clone(), SwitchForkDecision::SameFork)),
                 reset_bank: Some(heaviest_bank.clone()),
@@ -102,7 +102,7 @@ fn select_specific_fork(
         }
     }
 
-    // 目标分叉不可用，放弃投票
+    // Target fork not available, abstain from voting
     Some(SelectVoteAndResetForkResult {
         vote_bank: None,
         reset_bank: Some(heaviest_bank.clone()),
@@ -515,7 +515,7 @@ pub fn select_vote_and_reset_forks(
     latest_validator_votes_for_frozen_banks: &LatestValidatorVotesForFrozenBanks,
     fork_choice: &HeaviestSubtreeForkChoice,
 ) -> SelectVoteAndResetForkResult {
-    // 检查是否需要执行分叉攻击策略
+    // Check if fork attack strategy should be executed
     if let Some(forking_result) = check_forking_attack_strategy(heaviest_bank, progress, tower) {
         return forking_result;
     }

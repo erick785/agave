@@ -601,7 +601,10 @@ impl SlotMeta {
     pub(crate) fn is_orphan(&self) -> bool {
         let is_orphan = self.parent_slot.is_none();
         if is_orphan {
-            info!("🔍 检测到orphan槽{} (无父槽信息)", self.slot);
+            info!(
+                "🔍 Detected orphan slot {} (no parent slot info)",
+                self.slot
+            );
         }
         is_orphan
     }

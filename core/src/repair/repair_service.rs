@@ -851,7 +851,7 @@ impl RepairService {
             }
 
             info!(
-                "🔍 检测到槽{}需要更多shreds，当前received={}, consumed={}",
+                "🔍 Detected slot {} needs more shreds, current received={}, consumed={}",
                 slot, slot_meta.received, slot_meta.consumed
             );
             match RepairService::request_repair_if_needed(
@@ -859,11 +859,14 @@ impl RepairService {
                 ShredRepairType::HighestShred(slot, slot_meta.received),
             ) {
                 Some(repair_request) => {
-                    info!("✅ 为槽{}生成HighestShred repair请求", slot);
+                    info!("✅ Generated HighestShred repair request for slot {}", slot);
                     vec![repair_request]
                 }
                 None => {
-                    info!("⏭️  槽{}的HighestShred repair请求已存在，跳过", slot);
+                    info!(
+                        "⏭️  HighestShred repair request for slot {} already exists, skipping",
+                        slot
+                    );
                     vec![]
                 }
             }
@@ -1085,7 +1088,7 @@ impl RepairService {
         if let Entry::Vacant(entry) = outstanding_repairs.entry(repair_request) {
             entry.insert(timestamp());
             info!(
-                "🔧 发起Repair请求: {:?}, 时间戳={}ms",
+                "🔧 Initiating Repair request: {:?}, timestamp={}ms",
                 repair_request,
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)

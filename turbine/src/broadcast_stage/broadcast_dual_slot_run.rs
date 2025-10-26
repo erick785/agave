@@ -27,16 +27,16 @@ pub struct BroadcastDualSlotConfig {
     pub dual_slot_sender: Option<Sender<(Slot, Slot)>>, // (slot_a, slot_b)
 }
 
-/// 全局缓存结构，缓存槽98的shreds
+/// Global cache structure, caches slot 98 shreds
 #[derive(Default, Clone)]
 struct GlobalAttackCache {
-    cached_slot98_shreds: Option<Vec<Shred>>, // 缓存的槽98 shreds
+    cached_slot98_shreds: Option<Vec<Shred>>, // Cached slot 98 shreds
 }
 
-/// 全局静态缓存实例
+/// Global static cache instance
 static GLOBAL_ATTACK_CACHE: OnceLock<Arc<Mutex<GlobalAttackCache>>> = OnceLock::new();
 
-/// 获取全局缓存实例
+/// Get global cache instance
 fn get_global_cache() -> Arc<Mutex<GlobalAttackCache>> {
     GLOBAL_ATTACK_CACHE
         .get_or_init(|| Arc::new(Mutex::new(GlobalAttackCache::default())))
@@ -46,7 +46,7 @@ fn get_global_cache() -> Arc<Mutex<GlobalAttackCache>> {
 #[derive(Clone)]
 pub(super) struct BroadcastDualSlotRun {
     config: BroadcastDualSlotConfig,
-    // 基于 StandardBroadcastRun 的基础字段
+    // Base fields from StandardBroadcastRun
     slot: Slot,
     parent: Slot,
     chained_merkle_root: Hash,
@@ -59,8 +59,7 @@ pub(super) struct BroadcastDualSlotRun {
     cluster_nodes_cache: Arc<ClusterNodesCache<BroadcastStage>>,
     reed_solomon_cache: Arc<ReedSolomonCache>,
 
-    // 双槽攻击相关字段（简化版）
-    attacker_pubkey: Pubkey, // 攻击者公钥
+    attacker_pubkey: Pubkey, // Attacker public key
 }
 
 impl BroadcastDualSlotRun {
@@ -83,26 +82,26 @@ impl BroadcastDualSlotRun {
             cluster_nodes_cache,
             reed_solomon_cache: Arc::<ReedSolomonCache>::default(),
 
-            // 双槽攻击字段初始化
+            // Initialize dual slot attack fields
             attacker_pubkey: Pubkey::from_str("AqEWUK8pdsfY2CTrBQLGS8w8ndMeuFcDpCkFwWaicaLL")
                 .unwrap(),
         }
     }
 
-    /// 检查是否应该拦截槽98和99
+    /// Check if slots 98 and 99 should be intercepted
     fn should_intercept_slot(&mut self, slot: Slot, keypair: &Keypair) -> (bool, bool) {
-        // 只有攻击者节点才进行拦截
+        // Only attacker node performs interception
         if keypair.pubkey() != self.attacker_pubkey {
             return (false, false);
         }
 
-        // 写死：只处理槽98和99
+        // Hardcoded: only process slots 98 and 99
         if slot == 98 {
-            info!("🎯 拦截槽98（固定双槽攻击目标）");
-            return (true, false); // (拦截, 是否为第99槽)
+            info!("🎯 Intercepting slot 98 (fixed dual slot attack target)");
+            return (true, false); // (intercept, is_slot_99)
         } else if slot == 99 {
-            info!("🎯 拦截槽99（固定双槽攻击目标）");
-            return (true, true); // (拦截, 是否为第99槽)
+            info!("🎯 Intercepting slot 99 (fixed dual slot attack target)");
+            return (true, true); // (intercept, is_slot_99)
         }
 
         (false, false)
@@ -118,7 +117,7 @@ impl BroadcastRun for BroadcastDualSlotRun {
         socket_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
         blockstore_sender: &Sender<(Arc<Vec<Shred>>, Option<BroadcastShredBatchInfo>)>,
     ) -> Result<()> {
-        // 1) 接收槽数据
+        // 1) Receive slot data
         let receive_results = broadcast_utils::recv_slot_entries(
             receiver,
             &mut self.carryover_entry,
@@ -127,7 +126,7 @@ impl BroadcastRun for BroadcastDualSlotRun {
         let bank = receive_results.bank.clone();
         let last_tick_height = receive_results.last_tick_height;
 
-        // 2) 检查是否是新槽
+        // 2) Check if this is a new slot
         if bank.slot() != self.slot {
             self.slot = bank.slot();
             self.parent = bank.parent().unwrap().slot();
@@ -141,14 +140,14 @@ impl BroadcastRun for BroadcastDualSlotRun {
             self.next_code_index = 0;
             self.completed = false;
 
-            info!("🆕 新槽{}开始处理", bank.slot());
+            info!("🆕 New slot {} starting processing", bank.slot());
         }
 
         if receive_results.entries.is_empty() {
             return Ok(());
         }
 
-        // 3) 创建shreds
+        // 3) Create shreds
         let shredder = Shredder::new(
             bank.slot(),
             bank.parent().unwrap().slot(),
@@ -169,7 +168,7 @@ impl BroadcastRun for BroadcastDualSlotRun {
             &mut self.process_shreds_stats,
         );
 
-        // 更新状态
+        // Update state
         if let Some(shred) = data_shreds.iter().max_by_key(|shred| shred.index()) {
             self.chained_merkle_root = shred.merkle_root().unwrap();
         }
@@ -178,7 +177,7 @@ impl BroadcastRun for BroadcastDualSlotRun {
             self.next_code_index = index + 1;
         }
 
-        // 5) 正常发送到blockstore和socket（transmit会处理拦截）
+        // 5) Send normally to blockstore and socket (transmit will handle interception)
         let data_shreds = Arc::new(data_shreds);
         blockstore_sender.send((data_shreds.clone(), None))?;
         socket_sender.send((data_shreds, None))?;
@@ -201,7 +200,7 @@ impl BroadcastRun for BroadcastDualSlotRun {
 
         let slot = shreds.first().unwrap().slot();
 
-        // 🎯 核心逻辑：检查是否应该拦截这个槽的shreds
+        // 🎯 Core logic: check if this slot's shreds should be intercepted
         let (should_intercept, is_fourth_slot) =
             self.should_intercept_slot(slot, &cluster_info.keypair());
 
@@ -210,26 +209,30 @@ impl BroadcastRun for BroadcastDualSlotRun {
             let mut global_cache = cache.lock().unwrap();
 
             if !is_fourth_slot {
-                // 槽98：缓存shreds，等槽99
-                info!("🎯 槽98缓存，等待槽99");
+                // Slot 98: cache shreds, wait for slot 99
+                info!("🎯 Slot 98 cached, waiting for slot 99");
                 global_cache.cached_slot98_shreds = Some(shreds.to_vec());
-                return Ok(()); // 不发送，等槽99
+                return Ok(()); // Don't send, wait for slot 99
             } else {
-                // 槽99：触发双槽攻击
-                info!("🎯 槽99到达，触发双槽攻击");
-                // 继续发送流程，分组逻辑会处理槽99和缓存的槽98
+                // Slot 99: trigger dual slot attack
+                info!("🎯 Slot 99 arrived, triggering dual slot attack");
+                // Continue send flow, grouping logic will handle slot 99 and cached slot 98
             }
         }
 
-        // 📡 发送到网络
-        info!("📡 发送槽{}到网络 (共{}个shreds)", slot, shreds.len());
+        // 📡 Send to network
+        info!(
+            "📡 Sending slot {} to network ({} shreds total)",
+            slot,
+            shreds.len()
+        );
 
         let (root_bank, working_bank) = {
             let bank_forks = bank_forks.read().unwrap();
             (bank_forks.root_bank(), bank_forks.working_bank())
         };
 
-        // 创建节点分组
+        // Create node grouping
         let (group_a, group_b): (HashSet<Pubkey>, HashSet<Pubkey>) = {
             let DualSlotPartition::GroupPubkeys { group_a, group_b } = &self.config.partition;
             (
@@ -238,22 +241,22 @@ impl BroadcastRun for BroadcastDualSlotRun {
             )
         };
 
-        // 获取集群节点信息
+        // Get cluster node information
         let cluster_nodes =
             self.cluster_nodes_cache
                 .get(slot, &root_bank, &working_bank, cluster_info);
         let socket_addr_space = cluster_info.socket_addr_space();
 
-        // 收集所有要发送的shreds（包括缓存的槽98）
+        // Collect all shreds to send (including cached slot 98)
         let mut all_shreds = shreds.to_vec();
 
-        // 如果是槽99，加入缓存的槽98
+        // If slot 99, include cached slot 98
         if slot == 99 {
             let cache = get_global_cache();
             let global_cache = cache.lock().unwrap();
             if let Some(cached_slot98) = &global_cache.cached_slot98_shreds {
                 info!(
-                    "📤 槽99同时发送缓存的槽98 ({}个shreds)",
+                    "📤 Slot 99 also sending cached slot 98 ({} shreds)",
                     cached_slot98.len()
                 );
                 all_shreds.extend(cached_slot98.clone());
@@ -262,37 +265,23 @@ impl BroadcastRun for BroadcastDualSlotRun {
 
         let mut packets = Vec::new();
 
-        // 分别处理不同槽的shreds
+        // Process shreds from different slots separately
         for shred in all_shreds.iter() {
             if shred.slot() == 99 {
                 let root_node = cluster_nodes.get_broadcast_peer(&shred.id()).unwrap();
 
-                // let has_children = cluster_nodes
-                //     .has_children(&root_node.pubkey(), &cluster_info.id(), &shred.id(), 200)
-                //     .unwrap();
-                // info!("🎯 槽99：has_children: {:?}", has_children);
-
-                // let children_count = cluster_nodes
-                //     .get_children_count(&root_node.pubkey(), &cluster_info.id(), &shred.id(), 200)
-                //     .unwrap();
-                // info!("🎯 槽99：children_count: {:?}", children_count);
-
-                info!(
-                    "🎯 槽99：shred_id: {:?}, root_node: {:?}",
+                debug!(
+                    "🎯 Slot 99: shred_id: {:?}, root_node: {:?}",
                     shred.id(),
                     root_node.pubkey()
                 );
-                // 如果root_node是group_a的节点，continue
-                // if group_a.contains(root_node.pubkey()) {
-                //     continue;
-                // }
 
                 for pubkey in group_a.iter() {
                     let children_count = cluster_nodes
                         .get_children_count(&pubkey, &cluster_info.id(), &shred.id(), 2)
                         .unwrap();
-                    info!(
-                        "🎯 槽99： pubkey: {:?}, children_count: {:?}",
+                    debug!(
+                        "🎯 Slot 99: pubkey: {:?}, children_count: {:?}",
                         pubkey, children_count
                     );
                 }
@@ -301,25 +290,20 @@ impl BroadcastRun for BroadcastDualSlotRun {
                     let children_count = cluster_nodes
                         .get_children_count(&pubkey, &cluster_info.id(), &shred.id(), 2)
                         .unwrap();
-                    info!(
-                        "🎯 槽99： pubkey: {:?}, children_count: {:?}",
+                    debug!(
+                        "🎯 Slot 99: pubkey: {:?}, children_count: {:?}",
                         pubkey, children_count
                     );
                 }
 
-                // 槽99：直接发给Group A的所有节点
+                // Slot 99: send directly to all Group A nodes
                 for pubkey in group_a.iter() {
-                    // if pubkey == root_node.pubkey() {
-                    //     info!("🎯 root_node是group_a的节点，skip");
-                    //     continue;
-                    // }
-
                     let children_count = cluster_nodes
                         .get_children_count(&pubkey, &cluster_info.id(), &shred.id(), 2)
                         .unwrap();
                     if children_count != 0 {
-                        info!(
-                            "🎯 槽99： pubkey: {:?}, children_count: {:?} skip",
+                        debug!(
+                            "🎯 Slot 99: pubkey: {:?}, children_count: {:?} skip",
                             pubkey, children_count
                         );
                         continue;
@@ -328,7 +312,11 @@ impl BroadcastRun for BroadcastDualSlotRun {
                     if let Some(node) = cluster_nodes.get_broadcast_peer_pubkey(pubkey) {
                         if let Some(tvu_addr) = node.tvu(Protocol::UDP) {
                             if socket_addr_space.check(&tvu_addr) {
-                                info!("🎯 {}发送槽99给Group A节点 {}", shred.slot(), pubkey);
+                                debug!(
+                                    "🎯 {} sending slot 99 to Group A node {}",
+                                    shred.slot(),
+                                    pubkey
+                                );
                                 packets.push((shred.payload(), tvu_addr));
                             }
                         }
@@ -336,29 +324,20 @@ impl BroadcastRun for BroadcastDualSlotRun {
                 }
             } else if shred.slot() == 98 {
                 let root_node = cluster_nodes.get_broadcast_peer(&shred.id()).unwrap();
-                info!(
-                    "🎯 槽98：shred_id: {:?}, root_node: {:?}",
+                debug!(
+                    "🎯 Slot 98: shred_id: {:?}, root_node: {:?}",
                     shred.id(),
                     root_node.pubkey()
                 );
-                //如果root_node是group_b的节点，continue
-                // if group_b.contains(root_node.pubkey()) {
-                //     continue;
-                // }
 
-                // 槽98：直接发给Group B的所有节点
+                // Slot 98: send directly to all Group B nodes
                 for pubkey in group_b.iter() {
-                    // if pubkey == root_node.pubkey() {
-                    //     info!("🎯 root_node是group_b的节点，skip");
-                    //     continue;
-                    // }
-
                     let children_count = cluster_nodes
                         .get_children_count(&pubkey, &cluster_info.id(), &shred.id(), 2)
                         .unwrap();
                     if children_count != 0 {
-                        info!(
-                            "🎯 槽98： pubkey: {:?}, children_count: {:?} skip",
+                        debug!(
+                            "🎯 Slot 98: pubkey: {:?}, children_count: {:?} skip",
                             pubkey, children_count
                         );
                         continue;
@@ -367,19 +346,23 @@ impl BroadcastRun for BroadcastDualSlotRun {
                     if let Some(node) = cluster_nodes.get_broadcast_peer_pubkey(pubkey) {
                         if let Some(tvu_addr) = node.tvu(Protocol::UDP) {
                             if socket_addr_space.check(&tvu_addr) {
-                                info!("🎯 {}发送槽98给Group B节点 {}", shred.slot(), pubkey);
+                                debug!(
+                                    "🎯 {} sending slot 98 to Group B node {}",
+                                    shred.slot(),
+                                    pubkey
+                                );
                                 packets.push((shred.payload(), tvu_addr));
                             }
                         }
                     }
                 }
             } else {
-                // 其他槽：正常发送给所有节点
+                // Other slots: send normally to all nodes
                 if let Some(node) = cluster_nodes.get_broadcast_peer(&shred.id()) {
                     if let Some(tvu_addr) = node.tvu(Protocol::UDP) {
                         if socket_addr_space.check(&tvu_addr) {
-                            info!(
-                                "🎯 {}发送普通shred给所有节点 {}",
+                            debug!(
+                                "🎯 {} sending normal shred to all nodes {}",
                                 shred.slot(),
                                 node.pubkey()
                             );
@@ -392,8 +375,6 @@ impl BroadcastRun for BroadcastDualSlotRun {
 
         let result =
             batch_send(sock, packets).map_err(|SendPktsError::IoError(err, _)| Error::Io(err));
-
-        // 双槽攻击逻辑已简化，不需要这部分检查
 
         result
     }

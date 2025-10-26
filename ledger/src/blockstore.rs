@@ -651,7 +651,7 @@ impl Blockstore {
     pub fn orphan(&self, slot: Slot) -> Result<Option<bool>> {
         let result = self.orphans_cf.get(slot);
         if let Ok(Some(true)) = result {
-            info!("🚨 槽{}被标记为orphan", slot);
+            info!("🚨 Slot {} marked as orphan", slot);
         }
         result
     }
