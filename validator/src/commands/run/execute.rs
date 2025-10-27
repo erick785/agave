@@ -144,23 +144,9 @@ pub fn execute(
     info!("Node ID: {}", node_id);
 
     // New: Read and print forking strategy and target slot
-    let forking_strategy = get_forking_strategy(matches);
     let fork_target_slot = get_fork_target_slot(matches);
-    let max_vote_age = get_max_vote_age(matches);
-    let forking_one_time = get_forking_one_time(matches);
-    info!(
-        "Fork attack: Strategy: {:?}, Target slot: {:?}, Max vote age: {:?}, One-time mode: {:?} (enabled by default)",
-        forking_strategy, fork_target_slot, max_vote_age, forking_one_time
-    );
+    info!("Fork attack: Target slot: {:?}", fork_target_slot);
 
-    // New: Sync command line parameters to environment variables for unified fork logic access
-    if let Some(strategy) = &forking_strategy {
-        std::env::set_var("SOLANA_FORKING_STRATEGY", strategy);
-        info!(
-            "Fork attack: Setting environment variable SOLANA_FORKING_STRATEGY = {}",
-            strategy
-        );
-    }
     if let Some(slot) = fork_target_slot {
         std::env::set_var("SOLANA_FORK_TARGET_SLOT", slot.to_string());
         info!(
@@ -168,24 +154,13 @@ pub fn execute(
             slot
         );
     }
-    if let Some(age) = max_vote_age {
-        std::env::set_var("SOLANA_MAX_VOTE_AGE", age.to_string());
-        info!(
-            "Fork attack: Setting environment variable SOLANA_MAX_VOTE_AGE = {}",
-            age
-        );
-    }
-    if forking_one_time {
-        std::env::set_var("SOLANA_FORKING_ONE_TIME", "true");
-        info!("Fork attack: Setting environment variable SOLANA_FORKING_ONE_TIME = true");
-    }
 
     // Verify environment variables are set successfully
-    if let Ok(env_strategy) = std::env::var("SOLANA_FORKING_STRATEGY") {
-        if let Ok(env_slot) = std::env::var("SOLANA_FORK_TARGET_SLOT") {
-            info!("Fork attack: Environment variables confirmed - SOLANA_FORKING_STRATEGY = {}, SOLANA_FORK_TARGET_SLOT = {}", 
-                  env_strategy, env_slot);
-        }
+    if let Ok(env_slot) = std::env::var("SOLANA_FORK_TARGET_SLOT") {
+        info!(
+            "Fork attack: Environment variables confirmed - SOLANA_FORK_TARGET_SLOT = {}",
+            env_slot
+        );
     }
 
     let logfile = {
